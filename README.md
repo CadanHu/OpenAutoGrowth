@@ -13,7 +13,16 @@
 
 ## 🏗️ Architecture
 The system follows a **Layered + Multi-Agent + Dynamic Orchestration** design. 
-Detailed design specifications can be found in [ARCHITECTURE_DESIGN.md](./ARCHITECTURE_DESIGN.md).
+All design specifications live in the [`/docs`](./docs/README.md) directory:
+
+| Document | Description |
+| :--- | :--- |
+| [System Overview](./docs/architecture/00-overview.md) | Architecture layers, ADR decisions |
+| [Agent Design](./docs/architecture/01-agent-design.md) | 8 Agents' functions, I/O specs |
+| [System Flow](./docs/architecture/02-system-flow.md) | Core pipeline, sequence diagrams |
+| [State Machine](./docs/architecture/03-state-machine.md) | Campaign, Task, Asset states |
+| [Domain Model](./docs/business/01-domain-model.md) | DDD bounded contexts & aggregates |
+| [Entity Relations](./docs/business/02-entity-relations.md) | ER diagram & field definitions |
 
 ### System Flow
 1. **User Goal** → Interpreted by **Orchestrator**.
