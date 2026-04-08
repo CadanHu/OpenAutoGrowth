@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OpenAutoGrowth | Closed-Loop Growth Engine</title>
-    <meta name="description" content="AI-driven closed-loop system for content generation, execution, analysis, and optimization.">
+    <title>OpenAutoGrowth | AI 增长闭环引擎</title>
+    <meta name="description" content="Closed-loop AI growth engine: content generation, smart execution, data analysis, and autonomous optimization.">
     <link rel="stylesheet" href="style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -12,25 +12,39 @@
 </head>
 <body>
     <div id="app">
+
+        <!-- ── Navbar ─────────────────────────────────────────── -->
         <nav class="navbar">
             <div class="logo">
                 <span class="logo-icon">🚀</span>
                 <span class="logo-text">OpenAutoGrowth</span>
             </div>
-            <div class="nav-status">
-                <span class="status-dot"></span>
-                <span class="status-text">System Active</span>
+            <div class="nav-center">
+                <span class="system-version">Multi-Agent · Closed-Loop · v2.0</span>
+            </div>
+            <div class="nav-right">
+                <span id="campaign-status-badge" class="campaign-badge">NO CAMPAIGN</span>
+                <div class="nav-status">
+                    <span class="status-dot"></span>
+                    <span class="status-text">8 Agents Online</span>
+                </div>
             </div>
         </nav>
 
+        <!-- ── Hero ───────────────────────────────────────────── -->
         <main class="dashboard">
             <header class="hero">
-                <h1>Closed-Loop <span class="gradient-text">Growth Engine</span></h1>
-                <p>Automated Content Generation • Smart Execution • Data-Driven Optimization</p>
+                <h1>AI 驱动的 <span class="gradient-text">增长闭环引擎</span></h1>
+                <p>内容生成 &nbsp;·&nbsp; 智能投放 &nbsp;·&nbsp; 数据归因 &nbsp;·&nbsp; 自动优化</p>
+                <button id="btn-launch" class="btn primary hero-btn">
+                    🎯 &nbsp;Launch Campaign
+                </button>
             </header>
 
+            <!-- ── Agent Cards Grid ────────────────────────────── -->
             <section class="grid-container">
-                <!-- Content Generation Card -->
+
+                <!-- 1. Content Generation -->
                 <div class="card" id="generation-card">
                     <div class="card-header">
                         <div class="card-icon gen">🎨</div>
@@ -38,21 +52,21 @@
                     </div>
                     <div class="card-body">
                         <div class="stat-group">
-                            <span class="label">Total Assets</span>
-                            <span class="value" id="gen-count">1,284</span>
+                            <span class="label">Output Assets</span>
+                            <span class="value" id="gen-count">—</span>
                         </div>
                         <div class="progress-bar">
                             <div class="progress" style="width: 75%"></div>
                         </div>
-                        <p class="description">AI-generated marketing copy, images, and video scripts based on current trends.</p>
+                        <p class="description">ContentGen + Multimodal agents produce A/B copy variants and visual assets in parallel.</p>
                     </div>
                     <div class="card-footer">
                         <button class="btn secondary">View Library</button>
-                        <button class="btn primary">Generate New</button>
+                        <button id="btn-gen-new" class="btn primary">Generate New</button>
                     </div>
                 </div>
 
-                <!-- Posting Execution Card -->
+                <!-- 2. Smart Execution -->
                 <div class="card" id="execution-card">
                     <div class="card-header">
                         <div class="card-icon exec">📡</div>
@@ -61,20 +75,19 @@
                     <div class="card-body">
                         <div class="stat-group">
                             <span class="label">Reach Rate</span>
-                            <span class="value" id="exec-reach">85.2%</span>
+                            <span class="value" id="exec-reach">—</span>
                         </div>
                         <div class="activity-feed" id="exec-feed">
-                            <div class="feed-item">✓ Posted to LinkedIn</div>
-                            <div class="feed-item">✓ scheduled X (Twitter)</div>
+                            <div class="feed-item feed-placeholder">Waiting for campaign...</div>
                         </div>
                     </div>
                     <div class="card-footer">
                         <button class="btn secondary">Channels</button>
-                        <button class="btn primary">Execute Batch</button>
+                        <button id="btn-exec" class="btn primary">Execute Batch</button>
                     </div>
                 </div>
 
-                <!-- Data Analysis Card -->
+                <!-- 3. Data Analysis -->
                 <div class="card" id="analysis-card">
                     <div class="card-header">
                         <div class="card-icon analysis">📊</div>
@@ -84,21 +97,22 @@
                         <div class="chart-placeholder">
                             <div class="bar" style="height: 40%"></div>
                             <div class="bar" style="height: 60%"></div>
-                            <div class="bar" style="height: 80%"></div>
-                            <div class="bar" style="height: 50%"></div>
+                            <div class="bar" style="height: 55%"></div>
+                            <div class="bar" style="height: 70%"></div>
+                            <div class="bar" style="height: 45%"></div>
                         </div>
                         <div class="stat-group">
                             <span class="label">ROI Growth</span>
-                            <span class="value positive">+24.8%</span>
+                            <span class="value positive" id="roi-value">—</span>
                         </div>
                     </div>
                     <div class="card-footer">
                         <button class="btn secondary">Export Data</button>
-                        <button class="btn primary">Sync Analytics</button>
+                        <button id="btn-sync" class="btn primary">Sync Analytics</button>
                     </div>
                 </div>
 
-                <!-- Auto Optimization Card -->
+                <!-- 4. Auto Optimization -->
                 <div class="card" id="optimization-card">
                     <div class="card-header">
                         <div class="card-icon opt">⚙️</div>
@@ -108,23 +122,85 @@
                         <div class="optimization-status">
                             <div class="status-item">
                                 <span class="dot pulse"></span>
-                                <span class="text">Refining Prompts...</span>
+                                <span id="opt-status-text" class="text">Rule Engine on standby...</span>
                             </div>
                         </div>
-                        <p class="description">Self-correcting algorithms adjusting strategy based on real-time performance data.</p>
+                        <p class="description">
+                            A/B裁决 · 文案重写 · 预算再分配 · Lookalike 扩展 — 自动闭环优化。
+                        </p>
                     </div>
                     <div class="card-footer">
-                        <button class="btn secondary">Settings</button>
-                        <button class="btn primary">Run Optimizer</button>
+                        <button class="btn secondary">View Rules</button>
+                        <button id="btn-optimize" class="btn primary">Run Optimizer</button>
                     </div>
+                </div>
+
+            </section>
+
+            <!-- ── Activity Log ────────────────────────────────── -->
+            <section class="activity-log-section">
+                <div class="log-header">
+                    <h3>🔍 System Activity Log</h3>
+                    <span class="log-badge">Live</span>
+                </div>
+                <div id="activity-log" class="activity-log">
+                    <div class="log-entry" style="color:#94a3b8; border-left:2px solid #6366f1; padding-left:8px; font-size:0.8rem">
+                        System booting...
+                    </div>
+                </div>
+            </section>
+
+            <!-- ── Agent Pipeline Visual ───────────────────────── -->
+            <section class="pipeline-section">
+                <h3>Agent Pipeline</h3>
+                <div class="pipeline">
+                    <div class="pipeline-node">
+                        <span class="p-icon">🧠</span>
+                        <span class="p-label">Orchestrator</span>
+                    </div>
+                    <div class="pipeline-arrow">→</div>
+                    <div class="pipeline-node">
+                        <span class="p-icon">🗺️</span>
+                        <span class="p-label">Planner</span>
+                    </div>
+                    <div class="pipeline-arrow">→</div>
+                    <div class="pipeline-node parallel">
+                        <span class="p-icon">📝</span>
+                        <span class="p-label">ContentGen</span>
+                    </div>
+                    <div class="pipeline-node parallel">
+                        <span class="p-icon">🎨</span>
+                        <span class="p-label">Multimodal</span>
+                    </div>
+                    <div class="pipeline-node parallel">
+                        <span class="p-icon">🎯</span>
+                        <span class="p-label">Strategy</span>
+                    </div>
+                    <div class="pipeline-arrow">→</div>
+                    <div class="pipeline-node">
+                        <span class="p-icon">📡</span>
+                        <span class="p-label">ChannelExec</span>
+                    </div>
+                    <div class="pipeline-arrow">→</div>
+                    <div class="pipeline-node">
+                        <span class="p-icon">📊</span>
+                        <span class="p-label">Analysis</span>
+                    </div>
+                    <div class="pipeline-arrow">→</div>
+                    <div class="pipeline-node">
+                        <span class="p-icon">⚙️</span>
+                        <span class="p-label">Optimizer</span>
+                    </div>
+                    <div class="pipeline-arrow loop-back">↩ Loop</div>
                 </div>
             </section>
         </main>
 
         <footer class="system-footer">
-            <p>&copy; 2026 OpenAutoGrowth System • Powered by Antigravity AI</p>
+            <p>&copy; 2026 OpenAutoGrowth · Multi-Agent Closed-Loop Growth Engine · Built by Antigravity AI</p>
         </footer>
     </div>
+
     <script type="module" src="/main.js"></script>
 </body>
 </html>

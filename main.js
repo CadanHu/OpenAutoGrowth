@@ -1,87 +1,300 @@
-import './style.css'
-import { Orchestrator } from './src/agents/Orchestrator.js'
-import { Planner } from './src/agents/Planner.js'
-import { Optimizer } from './src/agents/Optimizer.js'
-import { MultimodalAgent } from './src/agents/Multimodal.js'
-import { Memory } from './src/core/Systems.js'
+/**
+ * OpenAutoGrowth — Main Entry Point
+ * 完整集成：Multi-Agent 闭环系统 + REST API + WebSocket 实时推送 + Dashboard UI
+ */
 
-// Initialize Support Layer
-const memory = new Memory();
+// ── Core Support Layer ────────────────────────────────────────────
+import { Memory, ToolRegistry }  from './src/core/Memory.js';
+import { globalEventBus }        from './src/core/EventBus.js';
+import { RuleEngine }            from './src/core/RuleEngine.js';
 
-// Initialize Intelligence Layer
-const planner = new Planner();
-const orchestrator = new Orchestrator(planner, memory);
+// ── Intelligence Layer ────────────────────────────────────────────
+import { Orchestrator }          from './src/agents/Orchestrator.js';
+import { Planner }               from './src/agents/Planner.js';
 
-// Register Agents (Mock implementations for UI)
-orchestrator.registerAgent('ContentGen', {
-    run: async (params) => {
-        updateStatus('gen-count', 'Generating...');
-        await new Promise(r => setTimeout(r, 2000));
-        updateStatus('gen-count', '1,312');
-        return { content: 'Perfect growth copy' };
+// ── Execution Agents ─────────────────────────────────────────────
+import { ContentGenAgent }       from './src/agents/ContentGen.js';
+import { MultimodalAgent }       from './src/agents/Multimodal.js';
+import { StrategyAgent }         from './src/agents/Strategy.js';
+import { ChannelExecAgent }      from './src/agents/ChannelExec.js';
+
+// ── Feedback Agents ───────────────────────────────────────────────
+import { AnalysisAgent }         from './src/agents/Analysis.js';
+import { OptimizerAgent }        from './src/agents/Optimizer.js';
+
+// ── API Layer ─────────────────────────────────────────────────────
+import { CampaignAPI }           from './src/api/routes.js';
+import { wsBroadcaster }         from './src/api/websocket.js';
+
+// ── CSS ───────────────────────────────────────────────────────────
+import './style.css';
+
+// ══════════════════════════════════════════════════════════════════
+// SYSTEM BOOTSTRAP
+// ══════════════════════════════════════════════════════════════════
+
+// 1. 支撑层
+const memory       = new Memory();
+const toolRegistry = new ToolRegistry();
+const ruleEngine   = new RuleEngine();
+
+// 2. 规划层
+const planner      = new Planner();
+const orchestrator = new Orchestrator({ planner, memory, ruleEngine });
+
+// 3. 注册所有执行 Agent
+orchestrator.registerAgent('Strategy',    new StrategyAgent());
+orchestrator.registerAgent('ContentGen',  new ContentGenAgent());
+orchestrator.registerAgent('Multimodal',  new MultimodalAgent());
+orchestrator.registerAgent('ChannelExec', new ChannelExecAgent());
+orchestrator.registerAgent('Analysis',    new AnalysisAgent());
+orchestrator.registerAgent('Optimizer',   new OptimizerAgent());
+
+// 4. API 层
+const api = new CampaignAPI({ orchestrator, memory });
+
+// 5. WebSocket 广播器（已在 import 时自动连接 EventBus）
+console.log('[System] WS Broadcaster active.');
+
+console.log('🚀 OpenAutoGrowth System Initialized — All Agents Online');
+
+// ══════════════════════════════════════════════════════════════════
+// DASHBOARD UI CONTROLLER
+// ══════════════════════════════════════════════════════════════════
+
+class DashboardController {
+    constructor() {
+        this.activeCampaignId = null;
+        this.logLines = 0;
     }
-});
 
-orchestrator.registerAgent('Multimodal', new MultimodalAgent());
-
-orchestrator.registerAgent('Strategy', {
-    run: async (params) => {
-        console.log('Strategy agent running...');
-        return { strategy: 'Focus on Gen Z' };
+    init() {
+        this._bindButtons();
+        this._subscribeToEvents();
+        this._startAnimations();
+        this.log('System online. All 8 agents registered.', 'success');
     }
-});
 
-orchestrator.registerAgent('Execution', {
-    run: async (params) => {
-        updateStatus('exec-reach', 'Syncing...');
-        // Access data from previous tasks via context
-        const assetUrl = params.context?.t3?.asset_url || 'N/A';
-        console.log(`[Execution] Posting asset to ${params.channel}: ${assetUrl}`);
-        
-        await new Promise(r => setTimeout(r, 1500));
-        updateStatus('exec-reach', '87.4%');
+    // ── Event subscriptions → UI updates ────────────────────────
+
+    _subscribeToEvents() {
+        // Campaign 状态变化 → 状态标签更新
+        globalEventBus.subscribe('StatusChanged', ({ payload: { old_status, new_status }, campaign_id }) => {
+            this.log(`Campaign ${campaign_id}: ${old_status} → <strong>${new_status}</strong>`, 'info');
+            this._updateCampaignBadge(new_status);
+        });
+
+        globalEventBus.subscribe('PlanGenerated', ({ payload: { plan } }) => {
+            this.log(`Planner generated DAG with ${plan.tasks.length} tasks (scenario: ${plan.scenario})`, 'info');
+            this._updateStat('gen-count', `${plan.tasks.length} Tasks`);
+        });
+
+        globalEventBus.subscribe('ContentGenerated', ({ payload: { bundle } }) => {
+            const count = bundle.variants?.length || 0;
+            this.log(`ContentGen produced ${count} A/B variants`, 'success');
+            this._updateStat('gen-count', `${count} Variants`);
+        });
+
+        globalEventBus.subscribe('AssetsGenerated', ({ payload: { asset_ids, type } }) => {
+            this.log(`Multimodal generated ${asset_ids.length} ${type}(s)`, 'success');
+        });
+
+        globalEventBus.subscribe('StrategyDecided', ({ payload: { strategy } }) => {
+            const channels = strategy.channel_plan?.map(c => c.channel).join(', ');
+            this.log(`Strategy: distributing budget across ${channels}`, 'info');
+        });
+
+        globalEventBus.subscribe('AdDeployed', ({ payload, campaign_id }) => {
+            this.log(`Ads deployed to ${payload.platforms?.join(', ')} ✅`, 'success');
+            this._addFeedItem(`✓ Deployed to ${payload.platforms?.join(' & ')}`);
+            this._updateStat('exec-reach', '87.4%');
+        });
+
+        globalEventBus.subscribe('ReportGenerated', ({ payload }) => {
+            const { roas, ctr } = payload.metrics || {};
+            this.log(`Analytics: ROAS ${roas?.toFixed(2)}x | CTR ${(ctr * 100)?.toFixed(2)}%`, 'info');
+            this._updateStat('roi-value', `+${((roas - 1) * 100)?.toFixed(1)}%`);
+            this._animateChartBars(roas);
+        });
+
+        globalEventBus.subscribe('OptimizationApplied', ({ payload }) => {
+            const types = payload.actions?.map(a => a.type).join(', ') || 'NONE';
+            this.log(`Optimizer fired: ${types}`, 'warning');
+            this._updateOptStatus(`Loop #${payload.loop_count} — ${types}`);
+        });
+
+        globalEventBus.subscribe('AnomalyDetected', ({ payload }) => {
+            this.log(`⚠️ Anomaly: ${payload.metric} on ${payload.channel} (${payload.severity})`, 'error');
+        });
+    }
+
+    // ── Button bindings ──────────────────────────────────────────
+
+    _bindButtons() {
+        // Main launch button
+        document.getElementById('btn-launch')?.addEventListener('click', () => this._launchCampaign());
+
+        // Card action buttons
+        document.getElementById('btn-gen-new')?.addEventListener('click',   () => this._triggerContentGen());
+        document.getElementById('btn-exec')?.addEventListener('click',       () => this._triggerExecution());
+        document.getElementById('btn-sync')?.addEventListener('click',       () => this._triggerAnalysis());
+        document.getElementById('btn-optimize')?.addEventListener('click',   () => this._triggerOptimizer());
+    }
+
+    // ── Actions ──────────────────────────────────────────────────
+
+    async _launchCampaign() {
+        this._setButtonState('btn-launch', 'Launching...', true);
+        this.log('─── New Campaign Cycle Started ───', 'divider');
+
+        const response = await api.createCampaign({
+            goal:        '新品 X Pro 冷启动推广，Q2 GMV 达 500 万',
+            budget:      { total: 50000, currency: 'CNY', daily_cap: 5000 },
+            timeline:    { start: '2026-04-10', end: '2026-04-30' },
+            kpi:         { metric: 'ROAS', target: 3.0 },
+            constraints: { channels: ['tiktok', 'meta', 'google'], region: 'CN' },
+        });
+
+        if (!response.success) {
+            this.log(`Error: ${response.error}`, 'error');
+            this._setButtonState('btn-launch', 'Launch Campaign', false);
+            return;
+        }
+
+        this.activeCampaignId = response.data.campaign_id;
+
+        // 订阅实时 WS 推送
+        wsBroadcaster.subscribe(this.activeCampaignId, (msg) => {
+            console.log('[WS →]', msg.type, msg.payload);
+        });
+
+        // 触发规划启动
+        await api.startCampaign(this.activeCampaignId);
+        this._setButtonState('btn-launch', 'Launch Campaign', false);
+    }
+
+    async _triggerContentGen() {
+        this._setButtonState('btn-gen-new', 'Generating...', true);
+        const agent = new ContentGenAgent();
+        await agent.run({
+            product:        { name: 'X Pro', category: 'SaaS', USP: ['AI驱动', '一键部署', '成本降低60%'] },
+            target_persona: { age: '25-35', interest: ['创业', '效率工具'] },
+            channels:       ['tiktok', 'weibo'],
+            tone:           'energetic',
+            ab_variants:    3,
+            campaign_id:    this.activeCampaignId || 'demo',
+        });
+        this._setButtonState('btn-gen-new', 'Generate New', false);
+    }
+
+    async _triggerExecution() {
+        this._setButtonState('btn-exec', 'Executing...', true);
+        const agent = new ChannelExecAgent();
+        await agent.run({
+            campaign_id: this.activeCampaignId || 'demo',
+            context: {
+                t1: { channel_plan: [{ channel: 'tiktok', budget: 20000 }, { channel: 'meta', budget: 15000 }] },
+                t2: { variants: [{ id: 'copy_vA', hook: '效率翻倍' }] },
+                t3: { assets: [{ id: 'img_001', type: 'IMAGE' }] },
+            },
+        });
+        this._setButtonState('btn-exec', 'Execute Batch', false);
+    }
+
+    async _triggerAnalysis() {
+        this._setButtonState('btn-sync', 'Syncing...', true);
+        const agent = new AnalysisAgent();
+        await agent.run({ metrics: ['CTR', 'ROAS'], campaign_id: this.activeCampaignId || 'demo' });
+        this._setButtonState('btn-sync', 'Sync Analytics', false);
+    }
+
+    async _triggerOptimizer() {
+        this._setButtonState('btn-optimize', 'Optimizing...', true);
+        const analysisAgent = new AnalysisAgent();
+        const report = await analysisAgent.run({ metrics: ['CTR', 'ROAS'], campaign_id: this.activeCampaignId || 'demo' });
+        const optimizerAgent = new OptimizerAgent();
+        await optimizerAgent._optimize(report, this.activeCampaignId || 'demo');
+        this._setButtonState('btn-optimize', 'Run Optimizer', false);
+    }
+
+    // ── UI Helpers ───────────────────────────────────────────────
+
+    log(message, type = 'info') {
+        const logEl = document.getElementById('activity-log');
+        if (!logEl) return;
+
+        const colorMap = {
+            success: '#10b981', info: '#94a3b8',
+            warning: '#f59e0b', error: '#ef4444',
+            divider: '#6366f1',
+        };
+
+        const line = document.createElement('div');
+        line.className = 'log-entry';
+        line.style.color = colorMap[type] || '#94a3b8';
+        line.style.borderLeft = `2px solid ${colorMap[type]}`;
+        line.style.paddingLeft = '8px';
+        line.style.marginBottom = '4px';
+        line.style.fontSize = '0.8rem';
+        line.innerHTML = `<span style="opacity:0.5">${new Date().toLocaleTimeString('zh-CN')}</span> ${message}`;
+
+        logEl.prepend(line);
+        if (++this.logLines > 30) logEl.lastChild?.remove();
+    }
+
+    _updateStat(id, value) {
+        const el = document.getElementById(id);
+        if (el) { el.style.opacity = '0'; setTimeout(() => { el.textContent = value; el.style.opacity = '1'; }, 200); }
+    }
+
+    _updateCampaignBadge(status) {
+        const badge = document.getElementById('campaign-status-badge');
+        if (badge) badge.textContent = status;
+    }
+
+    _updateOptStatus(text) {
+        const el = document.getElementById('opt-status-text');
+        if (el) el.textContent = text;
+    }
+
+    _addFeedItem(text) {
         const feed = document.getElementById('exec-feed');
+        if (!feed) return;
         const item = document.createElement('div');
         item.className = 'feed-item';
-        item.textContent = `✓ Auto-posted to ${params.channel} (Asset: ${assetUrl.split('/').pop()})`;
+        item.textContent = text;
         feed.prepend(item);
-        return { status: 'success', platform: params.channel };
+        if (feed.children.length > 5) feed.lastChild?.remove();
     }
-});
 
-orchestrator.registerAgent('Analysis', {
-    run: async (params) => {
-        console.log('Analysis agent pulling data...');
-        return { ctr: 0.042 };
+    _setButtonState(id, text, disabled) {
+        const btn = document.getElementById(id);
+        if (btn) { btn.textContent = text; btn.disabled = disabled; btn.style.opacity = disabled ? '0.6' : '1'; }
     }
-});
 
-orchestrator.registerAgent('Optimizer', new Optimizer());
+    _animateChartBars(roas = 2.5) {
+        const bars = document.querySelectorAll('.bar');
+        const heights = [
+            `${Math.min(roas * 20, 90)}%`,
+            `${Math.min(roas * 25, 95)}%`,
+            `${Math.min(roas * 15, 80)}%`,
+            `${Math.min(roas * 22, 92)}%`,
+        ];
+        bars.forEach((b, i) => { b.style.height = heights[i] || '60%'; });
+    }
 
-// UI Helpers
-function updateStatus(id, text) {
-    const el = document.getElementById(id);
-    if (el) el.textContent = text;
+    _startAnimations() {
+        // 随机数字波动，模拟实时数据
+        setInterval(() => {
+            const reach = (85 + Math.random() * 8).toFixed(1);
+            const el = document.getElementById('exec-reach');
+            if (el && el.textContent.includes('%')) el.textContent = `${reach}%`;
+        }, 4000);
+    }
 }
 
-// Global scope for button clicks
-window.startProcess = async () => {
-    const btn = document.querySelector('.hero .btn.primary') || { textContent: '' };
-    const originalText = btn.textContent;
-    btn.textContent = 'Synergy in Progress...';
-    
-    await orchestrator.processGoal('Increase SaaS engagement');
-    
-    btn.textContent = originalText;
-    alert('Closed-loop cycle complete! Strategies have been optimized.');
-};
-
-// Add event listener to the main hero button
+// ── Bootstrap ────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-    const mainBtn = document.querySelector('.hero .btn.primary');
-    if (mainBtn) {
-        mainBtn.addEventListener('click', window.startProcess);
-    }
+    const dashboard = new DashboardController();
+    dashboard.init();
 });
-
-console.log('OpenAutoGrowth System Initialized');
