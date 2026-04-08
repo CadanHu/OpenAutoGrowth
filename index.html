@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenAutoGrowth | Closed-Loop Growth Engine</title>
+    <meta name="description" content="AI-driven closed-loop system for content generation, execution, analysis, and optimization.">
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="app">
+        <nav class="navbar">
+            <div class="logo">
+                <span class="logo-icon">🚀</span>
+                <span class="logo-text">OpenAutoGrowth</span>
+            </div>
+            <div class="nav-status">
+                <span class="status-dot"></span>
+                <span class="status-text">System Active</span>
+            </div>
+        </nav>
+
+        <main class="dashboard">
+            <header class="hero">
+                <h1>Closed-Loop <span class="gradient-text">Growth Engine</span></h1>
+                <p>Automated Content Generation • Smart Execution • Data-Driven Optimization</p>
+            </header>
+
+            <section class="grid-container">
+                <!-- Content Generation Card -->
+                <div class="card" id="generation-card">
+                    <div class="card-header">
+                        <div class="card-icon gen">🎨</div>
+                        <h3>Content Generation</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="stat-group">
+                            <span class="label">Total Assets</span>
+                            <span class="value" id="gen-count">1,284</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress" style="width: 75%"></div>
+                        </div>
+                        <p class="description">AI-generated marketing copy, images, and video scripts based on current trends.</p>
+                    </div>
+                    <div class="card-footer">
+                        <button class="btn secondary">View Library</button>
+                        <button class="btn primary">Generate New</button>
+                    </div>
+                </div>
+
+                <!-- Posting Execution Card -->
+                <div class="card" id="execution-card">
+                    <div class="card-header">
+                        <div class="card-icon exec">📡</div>
+                        <h3>Smart Execution</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="stat-group">
+                            <span class="label">Reach Rate</span>
+                            <span class="value" id="exec-reach">85.2%</span>
+                        </div>
+                        <div class="activity-feed" id="exec-feed">
+                            <div class="feed-item">✓ Posted to LinkedIn</div>
+                            <div class="feed-item">✓ scheduled X (Twitter)</div>
+                        </div>
+                    </div>
+                    <div class="card-footer">
+                        <button class="btn secondary">Channels</button>
+                        <button class="btn primary">Execute Batch</button>
+                    </div>
+                </div>
+
+                <!-- Data Analysis Card -->
+                <div class="card" id="analysis-card">
+                    <div class="card-header">
+                        <div class="card-icon analysis">📊</div>
+                        <h3>Data Analysis</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-placeholder">
+                            <div class="bar" style="height: 40%"></div>
+                            <div class="bar" style="height: 60%"></div>
+                            <div class="bar" style="height: 80%"></div>
+                            <div class="bar" style="height: 50%"></div>
+                        </div>
+                        <div class="stat-group">
+                            <span class="label">ROI Growth</span>
+                            <span class="value positive">+24.8%</span>
+                        </div>
+                    </div>
+                    <div class="card-footer">
+                        <button class="btn secondary">Export Data</button>
+                        <button class="btn primary">Sync Analytics</button>
+                    </div>
+                </div>
+
+                <!-- Auto Optimization Card -->
+                <div class="card" id="optimization-card">
+                    <div class="card-header">
+                        <div class="card-icon opt">⚙️</div>
+                        <h3>Auto Optimization</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="optimization-status">
+                            <div class="status-item">
+                                <span class="dot pulse"></span>
+                                <span class="text">Refining Prompts...</span>
+                            </div>
+                        </div>
+                        <p class="description">Self-correcting algorithms adjusting strategy based on real-time performance data.</p>
+                    </div>
+                    <div class="card-footer">
+                        <button class="btn secondary">Settings</button>
+                        <button class="btn primary">Run Optimizer</button>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="system-footer">
+            <p>&copy; 2026 OpenAutoGrowth System • Powered by Antigravity AI</p>
+        </footer>
+    </div>
+    <script type="module" src="/main.js"></script>
+</body>
+</html>
