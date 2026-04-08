@@ -26,15 +26,35 @@ export class Orchestrator {
     }
 
     async executePlan(plan) {
-        const results = [];
-        for (const task of plan.tasks) {
-            const agent = this.agents[task.agentType];
-            if (agent) {
-                console.log(`[Orchestrator] Dispatching task "${task.id}" to ${task.agentType}`);
-                const result = await agent.run(task.params);
-                results.push({ task: task.id, result });
-                this.memory.save(`result_${task.id}`, result);
+        const results = {};
+        const pendingTasks = [...plan.tasks];
+        
+        while (pendingTasks.length > 0) {
+            // Find tasks whose dependencies are met
+            const readyTasks = pendingTasks.filter(task => 
+                !task.dependencies || task.dependencies.every(depId => !!results[depId])
+            );
+
+            if (readyTasks.length === 0) {
+                console.error('[Orchestrator] Circular dependency detected or no tasks ready.');
+                break;
             }
+
+            // Execute ready tasks in parallel
+            const executing = readyTasks.map(async (task) => {
+                const agent = this.agents[task.agentType];
+                if (agent) {
+                    console.log(`[Orchestrator] Dispatching task "${task.id}" to ${task.agentType}`);
+                    const result = await agent.run({ ...task.params, context: results });
+                    results[task.id] = result;
+                    this.memory.save(`result_${task.id}`, result);
+                }
+                // Remove from pending
+                const index = pendingTasks.indexOf(task);
+                if (index > -1) pendingTasks.splice(index, 1);
+            });
+
+            await Promise.all(executing);
         }
         return results;
     }

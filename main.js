@@ -2,6 +2,7 @@ import './style.css'
 import { Orchestrator } from './src/agents/Orchestrator.js'
 import { Planner } from './src/agents/Planner.js'
 import { Optimizer } from './src/agents/Optimizer.js'
+import { MultimodalAgent } from './src/agents/Multimodal.js'
 import { Memory } from './src/core/Systems.js'
 
 // Initialize Support Layer
@@ -21,6 +22,8 @@ orchestrator.registerAgent('ContentGen', {
     }
 });
 
+orchestrator.registerAgent('Multimodal', new MultimodalAgent());
+
 orchestrator.registerAgent('Strategy', {
     run: async (params) => {
         console.log('Strategy agent running...');
@@ -31,14 +34,18 @@ orchestrator.registerAgent('Strategy', {
 orchestrator.registerAgent('Execution', {
     run: async (params) => {
         updateStatus('exec-reach', 'Syncing...');
+        // Access data from previous tasks via context
+        const assetUrl = params.context?.t3?.asset_url || 'N/A';
+        console.log(`[Execution] Posting asset to ${params.channel}: ${assetUrl}`);
+        
         await new Promise(r => setTimeout(r, 1500));
         updateStatus('exec-reach', '87.4%');
         const feed = document.getElementById('exec-feed');
         const item = document.createElement('div');
         item.className = 'feed-item';
-        item.textContent = `✓ Auto-posted to ${params.channel}`;
+        item.textContent = `✓ Auto-posted to ${params.channel} (Asset: ${assetUrl.split('/').pop()})`;
         feed.prepend(item);
-        return { status: 'success' };
+        return { status: 'success', platform: params.channel };
     }
 });
 
