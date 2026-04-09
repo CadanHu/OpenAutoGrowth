@@ -60,6 +60,47 @@ export class CampaignAPI {
         return this._request('GET', `/campaigns/${id}/events`);
     }
 
+    // ── A2A Agents ────────────────────────────────────────────────────────
+
+    /**
+     * Call a backend agent directly (A2A style)
+     */
+    async callAgent(agentName, input) {
+        const taskId = `task_${Math.random().toString(36).slice(2, 10)}`;
+        const payload = {
+            id: taskId,
+            message: {
+                parts: [{ type: 'text', text: JSON.stringify(input) }]
+            }
+        };
+
+        const submitResp = await this._request('POST', `/agents/${agentName}/tasks/send`, payload);
+        if (!submitResp.success) return submitResp;
+
+        // Simple polling for result
+        return this._pollTask(agentName, taskId);
+    }
+
+    async _pollTask(agentName, taskId, retry = 0) {
+        if (retry > 30) return { success: false, error: 'Polling timeout' };
+
+        await new Promise(r => setTimeout(r, 2000));
+        const resp = await this._request('GET', `/agents/${agentName}/tasks/${taskId}`);
+
+        if (!resp.success) return resp;
+
+        const state = resp.data.status?.state;
+        if (state === 'completed') {
+            const artifact = resp.data.artifacts?.find(a => a.name === 'result');
+            const text = artifact?.parts?.find(p => p.type === 'text')?.text;
+            return { success: true, data: text ? JSON.parse(text) : {} };
+        } else if (state === 'failed' || state === 'canceled') {
+            return { success: false, error: `Task ${state}` };
+        }
+
+        return this._pollTask(agentName, taskId, retry + 1);
+    }
+
     // ── Internal fetch helper ─────────────────────────────────────────────
 
     async _request(method, path, body = null) {

@@ -41,9 +41,22 @@ export class ContentGenAgent {
         return output;
     }
 
-    async _generateVariants({ product, target_persona, tone, ab_variants }) {
+    async _generateVariants({ product, target_persona, channels, tone, ab_variants }) {
         // 模拟 LLM 生成（生产环境替换为真实 API 调用）
         await this._simulateLatency(1500);
+
+        const isTechnicalPromo = channels?.includes('zhihu') || channels?.includes('juejin');
+
+        if (isTechnicalPromo) {
+            return [{
+                id:        'copy_vA',
+                variant:   'A',
+                title:     `深入浅出 ${product?.name || '开源项目'}：重构企业级数据分析工作流`,
+                body:      `# ${product?.name || 'DataPulse'} 技术解析\n\n在现代数据驱动的商业环境中，我们需要更智能的工具。${product?.name} 正是为此而生。\n\n## 核心特性\n- ${product?.USP?.join('\n- ')}\n\n## 为什么选择 ${product?.name}？\n因为它不仅是一个工具，更是一个完整的生态。`,
+                channel:   'zhihu',
+                llm_model: 'claude-3-5-sonnet-mock',
+            }];
+        }
 
         const hooks = [
             `${product?.USP?.[0] || '全新功能'}，让你效率翻倍`,

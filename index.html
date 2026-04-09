@@ -205,6 +205,30 @@
         </footer>
     </div>
 
+    <!-- ── Article Preview Modal ────────────────────────────── -->
+    <div id="article-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>📝 <span data-i18n="modal_article_title">Preview Article</span></h3>
+                <button id="btn-close-modal" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="input-group">
+                    <label data-i18n="label_article_title">Title</label>
+                    <input type="text" id="article-title-input" class="modal-input">
+                </div>
+                <div class="input-group">
+                    <label data-i18n="label_article_body">Content (Markdown)</label>
+                    <textarea id="article-body-input" class="modal-textarea"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="btn-cancel-article" class="btn secondary" data-i18n="btn_cancel">Cancel</button>
+                <button id="btn-publish-article" class="btn primary" data-i18n="btn_publish">🚀 Publish to Zhihu</button>
+            </div>
+        </div>
+    </div>
+
     <script type="module" src="/main.js"></script>
 </body>
 </html>

@@ -8,6 +8,7 @@ Events: AdDeployed
 from datetime import datetime, timezone
 import uuid
 
+import httpx
 import structlog
 
 from app.config import settings
@@ -40,10 +41,33 @@ class GoogleAdapter:
         return [f"google_ad_{uuid.uuid4().hex[:8]}"]
 
 
+class ZhihuAdapter:
+    async def deploy(self, channel_config: dict, content: dict, assets: dict) -> list[str]:
+        """Deploy article to Zhihu."""
+        logger.info("zhihu_deploy_start")
+
+        if not settings.zhihu_cookie:
+            logger.warning("zhihu_no_cookie_configured")
+            return ["zhihu_failed_no_cookie"]
+
+        # In MVP, we simulate the network call to Zhihu's internal API
+        # Actual implementation would use httpx to POST to https://zhuanlan.zhihu.com/api/articles
+        # with the provided Cookie and Markdown content converted to Zhihu's format.
+
+        async with httpx.AsyncClient() as client:
+            # Placeholder for actual Zhihu API interaction
+            # For MVP/Safety, we log the intent and return a simulated ID
+            logger.info("zhihu_article_published_simulated",
+                        title=content.get("variants", [{}])[0].get("title"))
+
+        return [f"zhihu_art_{uuid.uuid4().hex[:8]}"]
+
+
 _ADAPTERS = {
     "meta":   MetaAdapter(),
     "tiktok": TikTokAdapter(),
     "google": GoogleAdapter(),
+    "zhihu":  ZhihuAdapter(),
 }
 
 

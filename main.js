@@ -150,6 +150,11 @@ class DashboardController {
         document.getElementById('btn-sync')?.addEventListener('click',       () => this._triggerAnalysis());
         document.getElementById('btn-optimize')?.addEventListener('click',   () => this._triggerOptimizer());
 
+        // Article Modal actions
+        document.getElementById('btn-close-modal')?.addEventListener('click', () => this._closeArticleModal());
+        document.getElementById('btn-cancel-article')?.addEventListener('click', () => this._closeArticleModal());
+        document.getElementById('btn-publish-article')?.addEventListener('click', () => this._publishArticle());
+
         // Language buttons
         document.getElementById('btn-lang-zh')?.addEventListener('click', () => i18n.setLocale('zh'));
         document.getElementById('btn-lang-en')?.addEventListener('click', () => i18n.setLocale('en'));
@@ -198,16 +203,60 @@ class DashboardController {
 
     async _triggerContentGen() {
         this._setButtonState('btn-gen-new', i18n.t('btn_generating'), true);
-        const agent = new ContentGenAgent();
-        await agent.run({
-            product:        { name: 'X Pro', category: 'SaaS', USP: ['AI驱动', '一键部署', '成本降低60%'] },
-            target_persona: { age: '25-35', interest: ['创业', '效率工具'] },
-            channels:       ['tiktok', 'weibo'],
-            tone:           'energetic',
-            ab_variants:    3,
+
+        // Check if we are in technical promo mode
+        const isTechnicalPromo = true;
+
+        // Use the Python backend via the callAgent API
+        const response = await api.callAgent('content_gen', {
             campaign_id:    this.activeCampaignId || 'demo',
+            goal:           'Promote open source project https://github.com/CadanHu/data-analyse-system',
+            strategy:       { channel_plan: [{ channel: 'zhihu' }] },
+            kpi:            { metric: 'awareness', target: 'high' }
         });
+
+        if (response.success) {
+            const output = response.data;
+            if (isTechnicalPromo && output.content?.variants?.[0]?.body) {
+                this._showArticleModal(output.content.variants[0]);
+            }
+        } else {
+            this.log(`Content generation failed: ${response.error}`, 'error');
+        }
+
         this._setButtonState('btn-gen-new', i18n.t('btn_gen_new'), false);
+    }
+
+    _showArticleModal(variant) {
+        document.getElementById('article-title-input').value = variant.title || 'Untitled Article';
+        document.getElementById('article-body-input').value = variant.body || '';
+        document.getElementById('article-modal').style.display = 'block';
+    }
+
+    _closeArticleModal() {
+        document.getElementById('article-modal').style.display = 'none';
+    }
+
+    async _publishArticle() {
+        this._setButtonState('btn-publish-article', 'Publishing...', true);
+
+        const title = document.getElementById('article-title-input').value;
+        const body = document.getElementById('article-body-input').value;
+
+        // Trigger execution agent for Zhihu via Python backend
+        const response = await api.callAgent('channel_exec', {
+            campaign_id: this.activeCampaignId || 'demo',
+            strategy: { channel_plan: [{ channel: 'zhihu' }] },
+            content: { variants: [{ title, body, channel: 'zhihu' }] }
+        });
+
+        if (!response.success) {
+            this.log(`Publishing failed: ${response.error}`, 'error');
+        }
+
+        this._setButtonState('btn-publish-article', '🚀 Publish to Zhihu', false);
+        this._closeArticleModal();
+        this.log('Article queued for publishing to Zhihu', 'success');
     }
 
     async _triggerExecution() {
