@@ -83,7 +83,8 @@ export class CampaignAPI {
     }
 
     async _pollTask(agentName, taskId, retry = 0) {
-        if (retry > 30) return { success: false, error: 'Polling timeout' };
+        // Increase timeout to 120 seconds (60 * 2s)
+        if (retry > 60) return { success: false, error: 'Polling timeout' };
 
         await new Promise(r => setTimeout(r, 2000));
         const resp = await this._request('GET', `/agents/${agentName}/tasks/${taskId}`);
@@ -94,9 +95,17 @@ export class CampaignAPI {
         if (state === 'completed') {
             const artifact = resp.data.artifacts?.find(a => a.name === 'result');
             const text = artifact?.parts?.find(p => p.type === 'text')?.text;
-            return { success: true, data: text ? JSON.parse(text) : {} };
+            const data = text ? JSON.parse(text) : {};
+
+            // Handle internal agent errors
+            if (data.errors && data.errors.length > 0) {
+                return { success: false, error: data.errors[0].error || 'Agent execution failed' };
+            }
+
+            return { success: true, data: data };
         } else if (state === 'failed' || state === 'canceled') {
-            return { success: false, error: `Task ${state}` };
+            const error = resp.data.metadata?.error || `Task ${state}`;
+            return { success: false, error: error };
         }
 
         return this._pollTask(agentName, taskId, retry + 1);

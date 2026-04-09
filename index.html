@@ -205,6 +205,34 @@
         </footer>
     </div>
 
+    <!-- ── Launch Campaign Modal ────────────────────────────── -->
+    <div id="launch-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>🎯 <span data-i18n="modal_launch_title">Launch New Promotion</span></h3>
+                <button id="btn-close-launch-modal" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="input-group">
+                    <label data-i18n="label_promo_goal">Promotion Goal (including GitHub URL)</label>
+                    <textarea id="promo-goal-input" class="modal-textarea" style="min-height: 100px;" placeholder="e.g., Promote my project https://github.com/CadanHu/data-analyse-system on Zhihu"></textarea>
+                </div>
+                <div class="input-group">
+                    <label data-i18n="label_promo_channels">Target Channels</label>
+                    <div class="checkbox-group">
+                        <label><input type="checkbox" name="channel" value="zhihu" checked> Zhihu</label>
+                        <label><input type="checkbox" name="channel" value="juejin"> Juejin</label>
+                        <label><input type="checkbox" name="channel" value="csdn"> CSDN</label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="btn-cancel-launch" class="btn secondary" data-i18n="btn_cancel">Cancel</button>
+                <button id="btn-confirm-launch" class="btn primary" data-i18n="btn_confirm_launch">🚀 Start Generation</button>
+            </div>
+        </div>
+    </div>
+
     <!-- ── Article Preview Modal ────────────────────────────── -->
     <div id="article-modal" class="modal">
         <div class="modal-content">

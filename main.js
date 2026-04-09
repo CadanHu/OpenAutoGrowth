@@ -155,6 +155,11 @@ class DashboardController {
         document.getElementById('btn-cancel-article')?.addEventListener('click', () => this._closeArticleModal());
         document.getElementById('btn-publish-article')?.addEventListener('click', () => this._publishArticle());
 
+        // Launch Modal actions
+        document.getElementById('btn-close-launch-modal')?.addEventListener('click', () => this._closeLaunchModal());
+        document.getElementById('btn-cancel-launch')?.addEventListener('click', () => this._closeLaunchModal());
+        document.getElementById('btn-confirm-launch')?.addEventListener('click', () => this._confirmLaunchPromotion());
+
         // Language buttons
         document.getElementById('btn-lang-zh')?.addEventListener('click', () => i18n.setLocale('zh'));
         document.getElementById('btn-lang-en')?.addEventListener('click', () => i18n.setLocale('en'));
@@ -202,22 +207,39 @@ class DashboardController {
     }
 
     async _triggerContentGen() {
-        this._setButtonState('btn-gen-new', i18n.t('btn_generating'), true);
+        // Now opens a modal for user input first
+        document.getElementById('launch-modal').style.display = 'block';
+        document.getElementById('promo-goal-input').value = 'Promote my open source project https://github.com/CadanHu/data-analyse-system on Zhihu';
+    }
 
-        // Check if we are in technical promo mode
-        const isTechnicalPromo = true;
+    _closeLaunchModal() {
+        document.getElementById('launch-modal').style.display = 'none';
+    }
+
+    async _confirmLaunchPromotion() {
+        const goal = document.getElementById('promo-goal-input').value;
+        const selectedChannels = Array.from(document.querySelectorAll('input[name="channel"]:checked')).map(cb => cb.value);
+
+        if (!goal || selectedChannels.length === 0) {
+            alert('Please provide a goal and at least one channel.');
+            return;
+        }
+
+        this._closeLaunchModal();
+        this._setButtonState('btn-gen-new', i18n.t('btn_generating'), true);
+        this.log('Starting AI technical article generation...', 'info');
 
         // Use the Python backend via the callAgent API
         const response = await api.callAgent('content_gen', {
             campaign_id:    this.activeCampaignId || 'demo',
-            goal:           'Promote open source project https://github.com/CadanHu/data-analyse-system',
-            strategy:       { channel_plan: [{ channel: 'zhihu' }] },
+            goal:           goal,
+            strategy:       { channel_plan: selectedChannels.map(ch => ({ channel: ch })) },
             kpi:            { metric: 'awareness', target: 'high' }
         });
 
         if (response.success) {
             const output = response.data;
-            if (isTechnicalPromo && output.content?.variants?.[0]?.body) {
+            if (output.content?.variants?.[0]?.body) {
                 this._showArticleModal(output.content.variants[0]);
             }
         } else {

@@ -8,3 +8,7 @@
   ➜  Local:   http://localhost:7373/
   ➜  Network: use --host to expose
 12:45:20 PM [vite] (client) page reload src/api/routes.js
+1:34:36 PM [vite] (client) page reload src/api/routes.js
+1:34:57 PM [vite] (client) page reload index.html
+1:35:01 PM [vite] (client) hmr update /style.css, /style.css?direct
+1:35:16 PM [vite] (client) page reload main.js
