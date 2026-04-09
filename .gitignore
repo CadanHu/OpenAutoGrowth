@@ -4,10 +4,9 @@ dist/
 *.local
 .env
 .env.*
-!.env.example
 
-# Architecture docs are now tracked
-# docs/architecture/
+# Ignore architecture docs for now
+docs/architecture/
 
 # Backend ignores
 backend/.venv/

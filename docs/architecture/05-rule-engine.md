@@ -226,5 +226,5 @@ flowchart TD
     HAS_ACTIONS -->|No| LLM[调用 LLM 推理层]
     LLM --> GUARD[安全护栏校验]
     HAS_ACTIONS -->|Yes| GUARD
-    GUARD --> OUTPUT["输出 OptAction[]"]
+    GUARD --> OUTPUT[输出 OptAction[]]
 ```
