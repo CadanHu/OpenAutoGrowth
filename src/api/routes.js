@@ -70,6 +70,7 @@ export class CampaignAPI {
         const payload = {
             id: taskId,
             message: {
+                role: 'user',
                 parts: [{ type: 'text', text: JSON.stringify(input) }]
             }
         };
