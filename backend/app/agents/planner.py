@@ -6,14 +6,13 @@ Output: state.plan, state.scenario
 Events: PlanGenerated
 """
 import structlog
-from anthropic import AsyncAnthropic
 
 from app.config import settings
 from app.core.event_bus import event_bus
+from app.core.llm import llm_client
 from .state import CampaignState
 
 logger = structlog.get_logger(__name__)
-_client = AsyncAnthropic(api_key=settings.anthropic_api_key)
 
 # DAG templates — mirrors Planner.js but is the authoritative Python version
 _TEMPLATES: dict[str, list[dict]] = {
