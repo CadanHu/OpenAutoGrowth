@@ -33,10 +33,10 @@ async def _get_github_readme(url: str) -> str:
         try:
             resp = await client.get(url)
             if resp.status_code == 404:
-                # Try master branch if main fails
                 url = url.replace("/main/", "/master/")
                 resp = await client.get(url)
             resp.raise_for_status()
+            logger.info("github_readme_fetched", url=url, size=len(resp.text))
             return resp.text
         except Exception as exc:
             logger.warning("github_readme_fetch_failed", url=url, error=str(exc))
