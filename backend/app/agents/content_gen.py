@@ -32,9 +32,9 @@ async def _call_llm(prompt: str) -> list[dict]:
         messages=[{"role": "user", "content": prompt}],
     )
     # Clean up potential markdown code blocks if the LLM includes them
-    if raw.startswith("```json"):
+    if "```json" in raw:
         raw = raw.split("```json")[1].split("```")[0].strip()
-    elif raw.startswith("```"):
+    elif "```" in raw:
         raw = raw.split("```")[1].split("```")[0].strip()
 
     return json.loads(raw)

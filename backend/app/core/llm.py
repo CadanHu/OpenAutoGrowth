@@ -106,7 +106,13 @@ class LLMClient:
             if api_key:
                 headers["Authorization"] = f"Bearer {api_key}"
 
-            url = f"{base_url}/chat/completions" if "/chat/completions" not in base_url else base_url
+            url = base_url
+            if "/chat/completions" not in url:
+                if "?" in url:
+                    url = url.replace("?", "/chat/completions?", 1)
+                else:
+                    url = url.rstrip("/") + "/chat/completions"
+
             response = await client.post(url, json=payload, headers=headers, timeout=60.0)
             response.raise_for_status()
             data = response.json()
