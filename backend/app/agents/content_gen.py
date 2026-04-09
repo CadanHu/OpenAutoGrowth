@@ -33,17 +33,17 @@ async def _get_github_readme(url: str) -> str:
         try:
             resp = await client.get(url)
             if resp.status_code == 404:
+                # Try master branch if main fails
                 url = url.replace("/main/", "/master/")
                 resp = await client.get(url)
             resp.raise_for_status()
-            logger.info("github_readme_fetched", url=url, size=len(resp.text))
             return resp.text
         except Exception as exc:
             logger.warning("github_readme_fetch_failed", url=url, error=str(exc))
             return ""
 
 
-@retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=2, max=5))
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 async def _call_llm(prompt: str, is_article: bool = False) -> list[dict]:
     """Call LLM to generate copy variants. Retries 3x on transient errors."""
     system_prompt = (
@@ -67,14 +67,12 @@ async def _call_llm(prompt: str, is_article: bool = False) -> list[dict]:
     raw = await llm_client.chat_completion(
         system=system_prompt,
         messages=[{"role": "user", "content": prompt}],
-        max_tokens=8192 if is_article else 2048,
     )
-    # Extract JSON array — find outermost [ ... ] to avoid being fooled
-    # by code blocks (```python, ```yaml etc.) inside the article body.
-    start = raw.find('[')
-    end = raw.rfind(']')
-    if start != -1 and end != -1:
-        raw = raw[start:end + 1]
+    # Clean up potential markdown code blocks if the LLM includes them
+    if "```json" in raw:
+        raw = raw.split("```json")[1].split("```")[0].strip()
+    elif raw.startswith("```"):
+        raw = raw.split("```")[1].split("```")[0].strip()
 
     return json.loads(raw)
 
@@ -108,9 +106,8 @@ async def content_gen_node(state: CampaignState) -> dict:
 
     if is_technical_promo:
         prompt += (
-            "\nFocus on deep technical analysis. Generate ONE comprehensive technical article "
-            "(variant_label: 'A') that highlights the project's innovation, architecture, and "
-            "value proposition. Return a JSON array with exactly 1 variant."
+            "\nFocus on deep technical analysis. Generate a comprehensive technical article "
+            "that highlights the project's innovation, architecture, and value proposition."
         )
     else:
         prompt += "\nGenerate 3 A/B/C copy variants optimized for these channels."
@@ -118,21 +115,59 @@ async def content_gen_node(state: CampaignState) -> dict:
     try:
         variants = await _call_llm(prompt, is_article=is_technical_promo)
 
-        bundle = {
-            "bundle_id": f"bundle_{uuid.uuid4().hex[:8]}",
+        bundle_id = uuid.uuid4()
+        bundle_data = {
+            "bundle_id": str(bundle_id),
             "variants": variants,
             "llm_model": settings.anthropic_model,
         }
 
+        # ── Persistence Layer ─────────────────────────────────────────────
+        from app.database import async_session_factory
+        from app.models.content import ContentBundle, Copy
+
+        async with async_session_factory() as db:
+            # Ensure campaign exists (it might be 'demo' in some contexts,
+            # we should skip persistence for demo or handle it)
+            campaign_id = state.get("campaign_id")
+            try:
+                camp_uuid = uuid.UUID(campaign_id)
+
+                new_bundle = ContentBundle(
+                    id=bundle_id,
+                    campaign_id=camp_uuid,
+                    llm_model=settings.anthropic_model,
+                    generation_params={"tone": state.get("tone", "professional")},
+                )
+                db.add(new_bundle)
+
+                for var in variants:
+                    new_copy = Copy(
+                        bundle_id=bundle_id,
+                        campaign_id=camp_uuid,
+                        variant_label=var.get("variant_label", "A"),
+                        hook=var.get("title") or var.get("hook"),
+                        body=var.get("body"),
+                        cta=var.get("cta"),
+                        channel=var.get("channel"),
+                        status="GENERATED"
+                    )
+                    db.add(new_copy)
+
+                await db.commit()
+                logger.info("content_gen_persisted", bundle_id=str(bundle_id))
+            except (ValueError, TypeError):
+                logger.warning("content_gen_persistence_skipped", campaign_id=campaign_id)
+
         await event_bus.publish(
             "ContentGenerated",
-            {"bundle": bundle},
+            {"bundle": bundle_data},
             state["campaign_id"],
         )
 
         logger.info("content_gen_done", variants=len(variants))
         return {
-            "content": bundle,
+            "content": bundle_data,
             "status": "PRODUCTION",
             "completed_tasks": ["content_gen"],
         }

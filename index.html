@@ -66,6 +66,7 @@
                     </div>
                     <div class="card-footer">
                         <button class="btn secondary" data-i18n="btn_view_library">View Library</button>
+                        <button id="btn-view-history" class="btn secondary" data-i18n="btn_history">History</button>
                         <button id="btn-gen-new" class="btn primary" data-i18n="btn_gen_new">Generate New</button>
                     </div>
                 </div>
@@ -206,6 +207,24 @@
     </div>
 
     <!-- ── Launch Campaign Modal ────────────────────────────── -->
+    <!-- ── History Modal ────────────────────────────── -->
+    <div id="history-modal" class="modal">
+        <div class="modal-content" style="max-width: 1000px;">
+            <div class="modal-header">
+                <h3>📜 <span data-i18n="modal_history_title">Article History</span></h3>
+                <button id="btn-close-history-modal" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="history-list" class="history-grid">
+                    <!-- History items will be injected here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="btn-close-history" class="btn secondary" data-i18n="btn_close">Close</button>
+            </div>
+        </div>
+    </div>
+
     <div id="launch-modal" class="modal">
         <div class="modal-content">
             <div class="modal-header">

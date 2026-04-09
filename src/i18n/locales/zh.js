@@ -17,6 +17,7 @@ export default {
   "card_gen_label": "产出资源",
   "card_gen_desc": "ContentGen + 多模态智能体并行生成 A/B 测试文案和视觉资源。",
   "btn_view_library": "查看库",
+  "btn_history": "历史记录",
   "btn_gen_new": "生成新内容",
 
   "card_exec_title": "智能投放",
@@ -63,5 +64,15 @@ export default {
   "log_optimizer_fired": "优化器已触发：{types}",
   "log_anomaly_detected": "⚠️ 异常：在 {channel} 上的 {metric} ({severity})",
   "log_opt_status": "循环 #{loop} — {types}",
-  "log_campaign_status_change": "活动 {id}: {old} → <strong>{new}</strong>"
+  "log_campaign_status_change": "活动 {id}: {old} → <strong>{new}</strong>",
+  "modal_article_title": "预览文章",
+  "label_article_title": "标题",
+  "label_article_body": "正文 (Markdown)",
+  "btn_cancel": "取消",
+  "btn_publish": "🚀 发布到知乎",
+  "modal_launch_title": "发起新推广",
+  "label_promo_goal": "推广目标 (包含 GitHub URL)",
+  "btn_confirm_launch": "🚀 开始生成",
+  "modal_history_title": "文章历史记录",
+  "btn_close": "关闭"
 };

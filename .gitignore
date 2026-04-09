@@ -12,4 +12,3 @@ docs/architecture/
 backend/.venv/
 backend/__pycache__/
 *.pyc
-backend/openautogrowth_backend.egg-info/

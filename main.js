@@ -146,6 +146,7 @@ class DashboardController {
 
         // Card action buttons
         document.getElementById('btn-gen-new')?.addEventListener('click',   () => this._triggerContentGen());
+        document.getElementById('btn-view-history')?.addEventListener('click', () => this._showHistoryModal());
         document.getElementById('btn-exec')?.addEventListener('click',       () => this._triggerExecution());
         document.getElementById('btn-sync')?.addEventListener('click',       () => this._triggerAnalysis());
         document.getElementById('btn-optimize')?.addEventListener('click',   () => this._triggerOptimizer());
@@ -159,6 +160,10 @@ class DashboardController {
         document.getElementById('btn-close-launch-modal')?.addEventListener('click', () => this._closeLaunchModal());
         document.getElementById('btn-cancel-launch')?.addEventListener('click', () => this._closeLaunchModal());
         document.getElementById('btn-confirm-launch')?.addEventListener('click', () => this._confirmLaunchPromotion());
+
+        // History Modal actions
+        document.getElementById('btn-close-history-modal')?.addEventListener('click', () => this._closeHistoryModal());
+        document.getElementById('btn-close-history')?.addEventListener('click', () => this._closeHistoryModal());
 
         // Language buttons
         document.getElementById('btn-lang-zh')?.addEventListener('click', () => i18n.setLocale('zh'));
@@ -216,6 +221,49 @@ class DashboardController {
         document.getElementById('launch-modal').style.display = 'none';
     }
 
+    async _showHistoryModal() {
+        const historyList = document.getElementById('history-list');
+        historyList.innerHTML = '<div class="loading">Loading history...</div>';
+        document.getElementById('history-modal').style.display = 'block';
+
+        const response = await api.listArticles();
+        if (response.success) {
+            this._renderHistoryList(response.data.items);
+        } else {
+            historyList.innerHTML = `<div class="error">Failed to load history: ${response.error}</div>`;
+        }
+    }
+
+    _renderHistoryList(items) {
+        const historyList = document.getElementById('history-list');
+        if (!items || items.length === 0) {
+            historyList.innerHTML = '<div class="empty">No history found.</div>';
+            return;
+        }
+
+        historyList.innerHTML = '';
+        items.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'history-item';
+            div.innerHTML = `
+                <h4>${item.title || 'Untitled'}</h4>
+                <div class="history-meta">
+                    <span>${new Date(item.created_at).toLocaleDateString()}</span>
+                    <span class="status-badge status-${item.status}">${item.status}</span>
+                </div>
+            `;
+            div.onclick = () => {
+                this._closeHistoryModal();
+                this._showArticleModal(item);
+            };
+            historyList.appendChild(div);
+        });
+    }
+
+    _closeHistoryModal() {
+        document.getElementById('history-modal').style.display = 'none';
+    }
+
     async _confirmLaunchPromotion() {
         const goal = document.getElementById('promo-goal-input').value;
         const selectedChannels = Array.from(document.querySelectorAll('input[name="channel"]:checked')).map(cb => cb.value);
@@ -260,24 +308,26 @@ class DashboardController {
     }
 
     async _publishArticle() {
-        this._setButtonState('btn-publish-article', 'Publishing...', true);
+        this._closeArticleModal();
+        this.log('Publishing article to Zhihu...', 'info');
 
         const title = document.getElementById('article-title-input').value;
         const body = document.getElementById('article-body-input').value;
 
         // Trigger execution agent for Zhihu via Python backend
-        const response = await api.callAgent('channel_exec', {
+        // We don't await polling here to keep UI responsive as requested
+        api.callAgent('channel_exec', {
             campaign_id: this.activeCampaignId || 'demo',
             strategy: { channel_plan: [{ channel: 'zhihu' }] },
             content: { variants: [{ title, body, channel: 'zhihu' }] }
+        }).then(response => {
+            if (response.success) {
+                this.log('Article successfully published to Zhihu!', 'success');
+            } else {
+                this.log(`Publishing failed: ${response.error}`, 'error');
+            }
         });
 
-        if (!response.success) {
-            this.log(`Publishing failed: ${response.error}`, 'error');
-        }
-
-        this._setButtonState('btn-publish-article', '🚀 Publish to Zhihu', false);
-        this._closeArticleModal();
         this.log('Article queued for publishing to Zhihu', 'success');
     }
 
