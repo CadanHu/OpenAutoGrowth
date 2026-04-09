@@ -130,6 +130,37 @@ body {
     gap: 1rem;
 }
 
+.lang-switcher {
+    display: flex;
+    gap: 0.5rem;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 2px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.lang-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    padding: 4px 8px;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: all 0.2s;
+}
+
+.lang-btn:hover {
+    color: var(--text-light);
+    background: rgba(255, 255, 255, 0.1);
+}
+
+html[lang="zh-CN"] #btn-lang-zh,
+html[lang="en"] #btn-lang-en {
+    background: var(--primary-light);
+    color: white;
+}
+
 .hero h1 {
     font-size: 3.5rem;
     font-weight: 700;

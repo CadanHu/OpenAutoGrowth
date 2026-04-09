@@ -20,13 +20,17 @@
                 <span class="logo-text">OpenAutoGrowth</span>
             </div>
             <div class="nav-center">
-                <span class="system-version">Multi-Agent · Closed-Loop · v2.0</span>
+                <span class="system-version" data-i18n="nav_version">Multi-Agent · Closed-Loop · v2.0</span>
             </div>
             <div class="nav-right">
-                <span id="campaign-status-badge" class="campaign-badge">NO CAMPAIGN</span>
+                <div class="lang-switcher">
+                    <button id="btn-lang-zh" class="lang-btn">ZH</button>
+                    <button id="btn-lang-en" class="lang-btn">EN</button>
+                </div>
+                <span id="campaign-status-badge" class="campaign-badge" data-i18n="nav_no_campaign">NO CAMPAIGN</span>
                 <div class="nav-status">
                     <span class="status-dot"></span>
-                    <span class="status-text">8 Agents Online</span>
+                    <span class="status-text" data-i18n="nav_agents_online">8 Agents Online</span>
                 </div>
             </div>
         </nav>
@@ -34,9 +38,9 @@
         <!-- ── Hero ───────────────────────────────────────────── -->
         <main class="dashboard">
             <header class="hero">
-                <h1>AI 驱动的 <span class="gradient-text">增长闭环引擎</span></h1>
-                <p>内容生成 &nbsp;·&nbsp; 智能投放 &nbsp;·&nbsp; 数据归因 &nbsp;·&nbsp; 自动优化</p>
-                <button id="btn-launch" class="btn primary hero-btn">
+                <h1 data-i18n="hero_title">AI 驱动的 <span class="gradient-text">增长闭环引擎</span></h1>
+                <p data-i18n="hero_subtitle">内容生成 &nbsp;·&nbsp; 智能投放 &nbsp;·&nbsp; 数据归因 &nbsp;·&nbsp; 自动优化</p>
+                <button id="btn-launch" class="btn primary hero-btn" data-i18n="btn_launch">
                     🎯 &nbsp;Launch Campaign
                 </button>
             </header>
@@ -48,21 +52,21 @@
                 <div class="card" id="generation-card">
                     <div class="card-header">
                         <div class="card-icon gen">🎨</div>
-                        <h3>Content Generation</h3>
+                        <h3 data-i18n="card_gen_title">Content Generation</h3>
                     </div>
                     <div class="card-body">
                         <div class="stat-group">
-                            <span class="label">Output Assets</span>
+                            <span class="label" data-i18n="card_gen_label">Output Assets</span>
                             <span class="value" id="gen-count">—</span>
                         </div>
                         <div class="progress-bar">
                             <div class="progress" style="width: 75%"></div>
                         </div>
-                        <p class="description">ContentGen + Multimodal agents produce A/B copy variants and visual assets in parallel.</p>
+                        <p class="description" data-i18n="card_gen_desc">ContentGen + Multimodal agents produce A/B copy variants and visual assets in parallel.</p>
                     </div>
                     <div class="card-footer">
-                        <button class="btn secondary">View Library</button>
-                        <button id="btn-gen-new" class="btn primary">Generate New</button>
+                        <button class="btn secondary" data-i18n="btn_view_library">View Library</button>
+                        <button id="btn-gen-new" class="btn primary" data-i18n="btn_gen_new">Generate New</button>
                     </div>
                 </div>
 
@@ -70,20 +74,20 @@
                 <div class="card" id="execution-card">
                     <div class="card-header">
                         <div class="card-icon exec">📡</div>
-                        <h3>Smart Execution</h3>
+                        <h3 data-i18n="card_exec_title">Smart Execution</h3>
                     </div>
                     <div class="card-body">
                         <div class="stat-group">
-                            <span class="label">Reach Rate</span>
+                            <span class="label" data-i18n="card_exec_label">Reach Rate</span>
                             <span class="value" id="exec-reach">—</span>
                         </div>
                         <div class="activity-feed" id="exec-feed">
-                            <div class="feed-item feed-placeholder">Waiting for campaign...</div>
+                            <div class="feed-item feed-placeholder" data-i18n="card_exec_waiting">Waiting for campaign...</div>
                         </div>
                     </div>
                     <div class="card-footer">
-                        <button class="btn secondary">Channels</button>
-                        <button id="btn-exec" class="btn primary">Execute Batch</button>
+                        <button class="btn secondary" data-i18n="btn_channels">Channels</button>
+                        <button id="btn-exec" class="btn primary" data-i18n="btn_exec_batch">Execute Batch</button>
                     </div>
                 </div>
 
@@ -91,7 +95,7 @@
                 <div class="card" id="analysis-card">
                     <div class="card-header">
                         <div class="card-icon analysis">📊</div>
-                        <h3>Data Analysis</h3>
+                        <h3 data-i18n="card_analysis_title">Data Analysis</h3>
                     </div>
                     <div class="card-body">
                         <div class="chart-placeholder">
@@ -102,13 +106,13 @@
                             <div class="bar" style="height: 45%"></div>
                         </div>
                         <div class="stat-group">
-                            <span class="label">ROI Growth</span>
+                            <span class="label" data-i18n="card_analysis_label">ROI Growth</span>
                             <span class="value positive" id="roi-value">—</span>
                         </div>
                     </div>
                     <div class="card-footer">
-                        <button class="btn secondary">Export Data</button>
-                        <button id="btn-sync" class="btn primary">Sync Analytics</button>
+                        <button class="btn secondary" data-i18n="btn_export_data">Export Data</button>
+                        <button id="btn-sync" class="btn primary" data-i18n="btn_sync_analytics">Sync Analytics</button>
                     </div>
                 </div>
 
@@ -116,22 +120,22 @@
                 <div class="card" id="optimization-card">
                     <div class="card-header">
                         <div class="card-icon opt">⚙️</div>
-                        <h3>Auto Optimization</h3>
+                        <h3 data-i18n="card_opt_title">Auto Optimization</h3>
                     </div>
                     <div class="card-body">
                         <div class="optimization-status">
                             <div class="status-item">
                                 <span class="dot pulse"></span>
-                                <span id="opt-status-text" class="text">Rule Engine on standby...</span>
+                                <span id="opt-status-text" class="text" data-i18n="card_opt_standby">Rule Engine on standby...</span>
                             </div>
                         </div>
-                        <p class="description">
+                        <p class="description" data-i18n="card_opt_desc">
                             A/B裁决 · 文案重写 · 预算再分配 · Lookalike 扩展 — 自动闭环优化。
                         </p>
                     </div>
                     <div class="card-footer">
-                        <button class="btn secondary">View Rules</button>
-                        <button id="btn-optimize" class="btn primary">Run Optimizer</button>
+                        <button class="btn secondary" data-i18n="btn_view_rules">View Rules</button>
+                        <button id="btn-optimize" class="btn primary" data-i18n="btn_run_optimizer">Run Optimizer</button>
                     </div>
                 </div>
 
@@ -140,11 +144,11 @@
             <!-- ── Activity Log ────────────────────────────────── -->
             <section class="activity-log-section">
                 <div class="log-header">
-                    <h3>🔍 System Activity Log</h3>
-                    <span class="log-badge">Live</span>
+                    <h3 data-i18n="log_header">🔍 System Activity Log</h3>
+                    <span class="log-badge" data-i18n="log_badge_live">Live</span>
                 </div>
                 <div id="activity-log" class="activity-log">
-                    <div class="log-entry" style="color:#94a3b8; border-left:2px solid #6366f1; padding-left:8px; font-size:0.8rem">
+                    <div class="log-entry" data-i18n="log_booting" style="color:#94a3b8; border-left:2px solid #6366f1; padding-left:8px; font-size:0.8rem">
                         System booting...
                     </div>
                 </div>
@@ -152,7 +156,7 @@
 
             <!-- ── Agent Pipeline Visual ───────────────────────── -->
             <section class="pipeline-section">
-                <h3>Agent Pipeline</h3>
+                <h3 data-i18n="pipeline_header">Agent Pipeline</h3>
                 <div class="pipeline">
                     <div class="pipeline-node">
                         <span class="p-icon">🧠</span>
@@ -197,7 +201,7 @@
         </main>
 
         <footer class="system-footer">
-            <p>&copy; 2026 OpenAutoGrowth · Multi-Agent Closed-Loop Growth Engine · Built by Antigravity AI</p>
+            <p data-i18n="footer_text">&copy; 2026 OpenAutoGrowth · Multi-Agent Closed-Loop Growth Engine · Built by Antigravity AI</p>
         </footer>
     </div>
 

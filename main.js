@@ -26,6 +26,9 @@ import { OptimizerAgent }        from './src/agents/Optimizer.js';
 import { CampaignAPI }           from './src/api/routes.js';
 import { wsBroadcaster }         from './src/api/websocket.js';
 
+// ── i18n ──────────────────────────────────────────────────────────
+import { i18n }                  from './src/i18n/index.js';
+
 // ── CSS ───────────────────────────────────────────────────────────
 import './style.css';
 
@@ -69,62 +72,69 @@ class DashboardController {
     }
 
     init() {
+        i18n.updateUI();
         this._bindButtons();
         this._subscribeToEvents();
         this._startAnimations();
-        this.log('System online. All 8 agents registered.', 'success');
+        this.log(i18n.t('status_online'), 'success');
     }
 
     // ── Event subscriptions → UI updates ────────────────────────
 
     _subscribeToEvents() {
+        // Handle language changes
+        document.addEventListener('languageChanged', () => {
+            this._updateCampaignBadge(document.getElementById('campaign-status-badge').textContent);
+        });
+
         // Campaign 状态变化 → 状态标签更新
         globalEventBus.subscribe('StatusChanged', ({ payload: { old_status, new_status }, campaign_id }) => {
-            this.log(`Campaign ${campaign_id}: ${old_status} → <strong>${new_status}</strong>`, 'info');
+            this.log(i18n.t('log_campaign_status_change', { id: campaign_id, old: old_status, new: new_status }), 'info');
             this._updateCampaignBadge(new_status);
         });
 
         globalEventBus.subscribe('PlanGenerated', ({ payload: { plan } }) => {
-            this.log(`Planner generated DAG with ${plan.tasks.length} tasks (scenario: ${plan.scenario})`, 'info');
+            this.log(i18n.t('log_planner_dag', { n: plan.tasks.length, s: plan.scenario }), 'info');
             this._updateStat('gen-count', `${plan.tasks.length} Tasks`);
         });
 
         globalEventBus.subscribe('ContentGenerated', ({ payload: { bundle } }) => {
             const count = bundle.variants?.length || 0;
-            this.log(`ContentGen produced ${count} A/B variants`, 'success');
+            this.log(i18n.t('log_content_gen', { n: count }), 'success');
             this._updateStat('gen-count', `${count} Variants`);
         });
 
         globalEventBus.subscribe('AssetsGenerated', ({ payload: { asset_ids, type } }) => {
-            this.log(`Multimodal generated ${asset_ids.length} ${type}(s)`, 'success');
+            this.log(i18n.t('log_assets_gen', { n: asset_ids.length, type }), 'success');
         });
 
         globalEventBus.subscribe('StrategyDecided', ({ payload: { strategy } }) => {
             const channels = strategy.channel_plan?.map(c => c.channel).join(', ');
-            this.log(`Strategy: distributing budget across ${channels}`, 'info');
+            this.log(i18n.t('log_strategy_decided', { channels }), 'info');
         });
 
         globalEventBus.subscribe('AdDeployed', ({ payload, campaign_id }) => {
-            this.log(`Ads deployed to ${payload.platforms?.join(', ')} ✅`, 'success');
-            this._addFeedItem(`✓ Deployed to ${payload.platforms?.join(' & ')}`);
+            const platforms = payload.platforms?.join(', ');
+            this.log(i18n.t('log_ads_deployed', { platforms }), 'success');
+            this._addFeedItem(i18n.t('log_deployed_to', { platforms: payload.platforms?.join(' & ') }));
             this._updateStat('exec-reach', '87.4%');
         });
 
         globalEventBus.subscribe('ReportGenerated', ({ payload }) => {
             const { roas, ctr } = payload.metrics || {};
-            this.log(`Analytics: ROAS ${roas?.toFixed(2)}x | CTR ${(ctr * 100)?.toFixed(2)}%`, 'info');
+            this.log(i18n.t('log_analytics_report', { roas: roas?.toFixed(2), ctr: (ctr * 100)?.toFixed(2) }), 'info');
             this._updateStat('roi-value', `+${((roas - 1) * 100)?.toFixed(1)}%`);
             this._animateChartBars(roas);
         });
 
         globalEventBus.subscribe('OptimizationApplied', ({ payload }) => {
             const types = payload.actions?.map(a => a.type).join(', ') || 'NONE';
-            this.log(`Optimizer fired: ${types}`, 'warning');
-            this._updateOptStatus(`Loop #${payload.loop_count} — ${types}`);
+            this.log(i18n.t('log_optimizer_fired', { types }), 'warning');
+            this._updateOptStatus(i18n.t('log_opt_status', { loop: payload.loop_count, types }));
         });
 
         globalEventBus.subscribe('AnomalyDetected', ({ payload }) => {
-            this.log(`⚠️ Anomaly: ${payload.metric} on ${payload.channel} (${payload.severity})`, 'error');
+            this.log(i18n.t('log_anomaly_detected', { metric: payload.metric, channel: payload.channel, severity: payload.severity }), 'error');
         });
     }
 
@@ -139,13 +149,17 @@ class DashboardController {
         document.getElementById('btn-exec')?.addEventListener('click',       () => this._triggerExecution());
         document.getElementById('btn-sync')?.addEventListener('click',       () => this._triggerAnalysis());
         document.getElementById('btn-optimize')?.addEventListener('click',   () => this._triggerOptimizer());
+
+        // Language buttons
+        document.getElementById('btn-lang-zh')?.addEventListener('click', () => i18n.setLocale('zh'));
+        document.getElementById('btn-lang-en')?.addEventListener('click', () => i18n.setLocale('en'));
     }
 
     // ── Actions ──────────────────────────────────────────────────
 
     async _launchCampaign() {
-        this._setButtonState('btn-launch', 'Launching...', true);
-        this.log('─── New Campaign Cycle Started ───', 'divider');
+        this._setButtonState('btn-launch', i18n.t('btn_launching'), true);
+        this.log(i18n.t('log_campaign_cycle_started'), 'divider');
 
         const response = await api.createCampaign({
             goal:        '新品 X Pro 冷启动推广，Q2 GMV 达 500 万',
@@ -162,7 +176,7 @@ class DashboardController {
         }
 
         this.activeCampaignId = response.data.id;
-        this.log(`Campaign created: ${this.activeCampaignId.slice(0, 8)}…`, 'success');
+        this.log(i18n.t('log_campaign_created', { id: this.activeCampaignId.slice(0, 8) }), 'success');
         this._updateCampaignBadge(response.data.status);
 
         // 订阅后端 WebSocket 推送 → 驱动 UI
@@ -175,15 +189,15 @@ class DashboardController {
         const startResp = await api.startCampaign(this.activeCampaignId);
         if (startResp.success) {
             this._updateCampaignBadge('PLANNING');
-            this.log(`Pipeline started — job ${startResp.data.job_id?.slice(0, 8)}…`, 'info');
+            this.log(i18n.t('log_pipeline_started', { id: startResp.data.job_id?.slice(0, 8) }), 'info');
         } else {
             this.log(`Start failed: ${startResp.error}`, 'error');
         }
-        this._setButtonState('btn-launch', 'Launch Campaign', false);
+        this._setButtonState('btn-launch', i18n.t('btn_launch'), false);
     }
 
     async _triggerContentGen() {
-        this._setButtonState('btn-gen-new', 'Generating...', true);
+        this._setButtonState('btn-gen-new', i18n.t('btn_generating'), true);
         const agent = new ContentGenAgent();
         await agent.run({
             product:        { name: 'X Pro', category: 'SaaS', USP: ['AI驱动', '一键部署', '成本降低60%'] },
@@ -193,11 +207,11 @@ class DashboardController {
             ab_variants:    3,
             campaign_id:    this.activeCampaignId || 'demo',
         });
-        this._setButtonState('btn-gen-new', 'Generate New', false);
+        this._setButtonState('btn-gen-new', i18n.t('btn_gen_new'), false);
     }
 
     async _triggerExecution() {
-        this._setButtonState('btn-exec', 'Executing...', true);
+        this._setButtonState('btn-exec', i18n.t('btn_executing'), true);
         const agent = new ChannelExecAgent();
         await agent.run({
             campaign_id: this.activeCampaignId || 'demo',
@@ -207,23 +221,23 @@ class DashboardController {
                 t3: { assets: [{ id: 'img_001', type: 'IMAGE' }] },
             },
         });
-        this._setButtonState('btn-exec', 'Execute Batch', false);
+        this._setButtonState('btn-exec', i18n.t('btn_exec_batch'), false);
     }
 
     async _triggerAnalysis() {
-        this._setButtonState('btn-sync', 'Syncing...', true);
+        this._setButtonState('btn-sync', i18n.t('btn_syncing'), true);
         const agent = new AnalysisAgent();
         await agent.run({ metrics: ['CTR', 'ROAS'], campaign_id: this.activeCampaignId || 'demo' });
-        this._setButtonState('btn-sync', 'Sync Analytics', false);
+        this._setButtonState('btn-sync', i18n.t('btn_sync_analytics'), false);
     }
 
     async _triggerOptimizer() {
-        this._setButtonState('btn-optimize', 'Optimizing...', true);
+        this._setButtonState('btn-optimize', i18n.t('btn_optimizing'), true);
         const analysisAgent = new AnalysisAgent();
         const report = await analysisAgent.run({ metrics: ['CTR', 'ROAS'], campaign_id: this.activeCampaignId || 'demo' });
         const optimizerAgent = new OptimizerAgent();
         await optimizerAgent._optimize(report, this.activeCampaignId || 'demo');
-        this._setButtonState('btn-optimize', 'Run Optimizer', false);
+        this._setButtonState('btn-optimize', i18n.t('btn_run_optimizer'), false);
     }
 
     // ── WebSocket message router ─────────────────────────────────
@@ -232,39 +246,41 @@ class DashboardController {
         const { type, payload, campaign_id } = msg;
         switch (type) {
             case 'campaign.status_changed':
-                this.log(`Campaign ${campaign_id?.slice(0,8)}: ${payload.old_status} → <strong>${payload.new_status}</strong>`, 'info');
+                this.log(i18n.t('log_campaign_status_change', { id: campaign_id?.slice(0,8), old: payload.old_status, new: payload.new_status }), 'info');
                 this._updateCampaignBadge(payload.new_status);
                 break;
             case 'campaign.plan_ready':
-                this.log(`Planner generated DAG with ${payload.plan?.tasks?.length ?? '?'} tasks (scenario: ${payload.plan?.scenario})`, 'info');
+                this.log(i18n.t('log_planner_dag', { n: payload.plan?.tasks?.length ?? '?', s: payload.plan?.scenario }), 'info');
                 this._updateStat('gen-count', `${payload.plan?.tasks?.length ?? '?'} Tasks`);
                 break;
             case 'task.content_generated':
-                this.log(`ContentGen produced ${payload.bundle?.variants?.length ?? 0} A/B variants`, 'success');
+                this.log(i18n.t('log_content_gen', { n: payload.bundle?.variants?.length ?? 0 }), 'success');
                 this._updateStat('gen-count', `${payload.bundle?.variants?.length ?? 0} Variants`);
                 break;
             case 'task.assets_generated':
-                this.log(`Multimodal generated ${payload.asset_ids?.length ?? 0} ${payload.type}(s)`, 'success');
+                this.log(i18n.t('log_assets_gen', { n: payload.asset_ids?.length ?? 0, type: payload.type }), 'success');
                 break;
             case 'task.strategy_decided':
-                this.log(`Strategy: distributing budget across ${payload.strategy?.channel_plan?.map(c => c.channel).join(', ')}`, 'info');
+                this.log(i18n.t('log_strategy_decided', { channels: payload.strategy?.channel_plan?.map(c => c.channel).join(', ') }), 'info');
                 break;
             case 'task.ad_deployed':
-                this.log(`Ads deployed to ${payload.platforms?.join(', ')} ✅`, 'success');
-                this._addFeedItem(`✓ Deployed to ${payload.platforms?.join(' & ')}`);
+                const platforms = payload.platforms?.join(', ');
+                this.log(i18n.t('log_ads_deployed', { platforms }), 'success');
+                this._addFeedItem(i18n.t('log_deployed_to', { platforms: payload.platforms?.join(' & ') }));
                 this._updateStat('exec-reach', '87.4%');
                 break;
             case 'metrics.updated':
-                this.log(`Analytics: ROAS ${payload.metrics?.roas?.toFixed(2)}x | CTR ${((payload.metrics?.ctr ?? 0) * 100).toFixed(2)}%`, 'info');
+                this.log(i18n.t('log_analytics_report', { roas: payload.metrics?.roas?.toFixed(2), ctr: ((payload.metrics?.ctr ?? 0) * 100).toFixed(2) }), 'info');
                 this._updateStat('roi-value', `+${((payload.metrics?.roas - 1) * 100)?.toFixed(1)}%`);
                 this._animateChartBars(payload.metrics?.roas);
                 break;
             case 'optimization.applied':
-                this.log(`Optimizer fired: ${payload.actions?.map(a => a.type).join(', ') || 'NONE'}`, 'warning');
-                this._updateOptStatus(`Loop #${payload.loop_count} — ${payload.actions?.map(a => a.type).join(', ')}`);
+                const types = payload.actions?.map(a => a.type).join(', ') || 'NONE';
+                this.log(i18n.t('log_optimizer_fired', { types }), 'warning');
+                this._updateOptStatus(i18n.t('log_opt_status', { loop: payload.loop_count, types }));
                 break;
             case 'anomaly.detected':
-                this.log(`⚠️ Anomaly: ${payload.metric} on ${payload.channel} (${payload.severity})`, 'error');
+                this.log(i18n.t('log_anomaly_detected', { metric: payload.metric, channel: payload.channel, severity: payload.severity }), 'error');
                 break;
             default:
                 this.log(`[WS] ${type}`, 'info');
@@ -303,7 +319,17 @@ class DashboardController {
 
     _updateCampaignBadge(status) {
         const badge = document.getElementById('campaign-status-badge');
-        if (badge) badge.textContent = status;
+        if (badge) {
+            // If the status is one of our predefined states that should be translated
+            const translationKey = `status_${status.toLowerCase()}`;
+            if (i18n.t(translationKey) !== translationKey) {
+                badge.setAttribute('data-i18n', translationKey);
+                badge.innerHTML = i18n.t(translationKey);
+            } else {
+                badge.removeAttribute('data-i18n');
+                badge.textContent = status;
+            }
+        }
     }
 
     _updateOptStatus(text) {
