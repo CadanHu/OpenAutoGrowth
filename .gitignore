@@ -5,8 +5,8 @@ dist/
 .env
 .env.*
 
-# Ignore architecture docs for now
-docs/architecture/
+# Architecture docs are now tracked
+# docs/architecture/
 
 # Backend ignores
 backend/.venv/
