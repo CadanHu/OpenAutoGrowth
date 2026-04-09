@@ -9,23 +9,20 @@ import json
 import uuid
 
 import structlog
-from anthropic import AsyncAnthropic
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.config import settings
 from app.core.event_bus import event_bus
+from app.core.llm import llm_client
 from .state import CampaignState
 
 logger = structlog.get_logger(__name__)
-_client = AsyncAnthropic(api_key=settings.anthropic_api_key)
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 async def _call_llm(prompt: str) -> list[dict]:
-    """Call Claude to generate copy variants. Retries 3x on transient errors."""
-    response = await _client.messages.create(
-        model=settings.anthropic_model,
-        max_tokens=settings.anthropic_max_tokens,
+    """Call LLM to generate copy variants. Retries 3x on transient errors."""
+    raw = await llm_client.chat_completion(
         system=(
             "You are a senior performance marketing copywriter. "
             "Return a JSON array of copy variants, each with: "
@@ -34,7 +31,12 @@ async def _call_llm(prompt: str) -> list[dict]:
         ),
         messages=[{"role": "user", "content": prompt}],
     )
-    raw = response.content[0].text
+    # Clean up potential markdown code blocks if the LLM includes them
+    if raw.startswith("```json"):
+        raw = raw.split("```json")[1].split("```")[0].strip()
+    elif raw.startswith("```"):
+        raw = raw.split("```")[1].split("```")[0].strip()
+
     return json.loads(raw)
 
 
