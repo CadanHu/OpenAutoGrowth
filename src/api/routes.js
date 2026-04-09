@@ -83,8 +83,8 @@ export class CampaignAPI {
     }
 
     async _pollTask(agentName, taskId, retry = 0) {
-        // Increase timeout to 120 seconds (60 * 2s)
-        if (retry > 60) return { success: false, error: 'Polling timeout' };
+        // Timeout: 150 * 2s = 300 seconds
+        if (retry > 150) return { success: false, error: 'Polling timeout' };
 
         await new Promise(r => setTimeout(r, 2000));
         const resp = await this._request('GET', `/agents/${agentName}/tasks/${taskId}`);

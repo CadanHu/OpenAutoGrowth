@@ -43,7 +43,7 @@ async def _get_github_readme(url: str) -> str:
             return ""
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+@retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=2, max=5))
 async def _call_llm(prompt: str, is_article: bool = False) -> list[dict]:
     """Call LLM to generate copy variants. Retries 3x on transient errors."""
     system_prompt = (
@@ -67,12 +67,14 @@ async def _call_llm(prompt: str, is_article: bool = False) -> list[dict]:
     raw = await llm_client.chat_completion(
         system=system_prompt,
         messages=[{"role": "user", "content": prompt}],
+        max_tokens=8192 if is_article else 2048,
     )
-    # Clean up potential markdown code blocks if the LLM includes them
-    if "```json" in raw:
-        raw = raw.split("```json")[1].split("```")[0].strip()
-    elif raw.startswith("```"):
-        raw = raw.split("```")[1].split("```")[0].strip()
+    # Extract JSON array — find outermost [ ... ] to avoid being fooled
+    # by code blocks (```python, ```yaml etc.) inside the article body.
+    start = raw.find('[')
+    end = raw.rfind(']')
+    if start != -1 and end != -1:
+        raw = raw[start:end + 1]
 
     return json.loads(raw)
 
@@ -106,8 +108,9 @@ async def content_gen_node(state: CampaignState) -> dict:
 
     if is_technical_promo:
         prompt += (
-            "\nFocus on deep technical analysis. Generate a comprehensive technical article "
-            "that highlights the project's innovation, architecture, and value proposition."
+            "\nFocus on deep technical analysis. Generate ONE comprehensive technical article "
+            "(variant_label: 'A') that highlights the project's innovation, architecture, and "
+            "value proposition. Return a JSON array with exactly 1 variant."
         )
     else:
         prompt += "\nGenerate 3 A/B/C copy variants optimized for these channels."
