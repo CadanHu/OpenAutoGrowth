@@ -1,0 +1,13 @@
+{
+  "name": "channel_exec",
+  "description": "多平台广告投放 Agent，Adapter 模式支持 Meta / TikTok / Google。",
+  "version": "1.0.0",
+  "url": "http://localhost:9393/v1/agents/channel_exec",
+  "provider": { "organization": "OpenAutoGrowth" },
+  "capabilities": { "streaming": false, "pushNotifications": true, "stateTransitionHistory": true },
+  "authentication": { "schemes": ["bearer"] },
+  "skills": [
+    { "id": "deploy_ads", "name": "投放广告", "inputModes": ["text"], "outputModes": ["text"] },
+    { "id": "pause_ads",  "name": "暂停广告", "inputModes": ["text"], "outputModes": ["text"] }
+  ]
+}

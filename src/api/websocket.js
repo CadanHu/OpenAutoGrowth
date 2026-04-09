@@ -1,87 +1,97 @@
 /**
- * WebSocket Layer — 实时状态推送
- * 订阅 EventBus，将关键事件推送到已连接的 Dashboard 客户端
- * 生产环境：对接 ws / socket.io；当前为浏览器端 EventSource 模拟层
+ * WSBroadcaster — 对接后端真实 WebSocket (:9393)
+ * 替换原浏览器内 EventBus 回调模拟层。
  */
-import { globalEventBus } from '../core/EventBus.js';
 
-/**
- * 事件类型 → 前端 UI Action 映射
- * 每个 WS 消息结构：{ type, campaign_id, payload, timestamp }
- */
-const WS_EVENT_MAP = {
-    'StatusChanged':         'campaign.status_changed',
-    'CampaignCreated':       'campaign.created',
-    'PlanGenerated':         'campaign.plan_ready',
-    'CampaignApproved':      'campaign.approved',
-    'CampaignPaused':        'campaign.paused',
-    'CampaignCompleted':     'campaign.completed',
-    'ContentGenerated':      'task.content_generated',
-    'AssetsGenerated':       'task.assets_generated',
-    'StrategyDecided':       'task.strategy_decided',
-    'AdDeployed':            'task.ad_deployed',
-    'ReportGenerated':       'metrics.updated',
-    'AnomalyDetected':       'anomaly.detected',
-    'OptimizationApplied':   'optimization.applied',
-};
+const WS_BASE = 'ws://localhost:9393/ws';
 
 export class WSBroadcaster {
     constructor() {
-        // Map<campaignId, Set<listenerCallback>>
-        this.clients = new Map();
-        this._subscribeToEventBus();
+        // Map<campaignId, { socket: WebSocket, callbacks: Set<Function> }>
+        this._connections = new Map();
     }
 
     /**
-     * 客户端订阅某个 Campaign 的实时更新
+     * 订阅某个 Campaign 的实时推送。
      * @param {string}   campaignId
      * @param {Function} callback  - (message) => void
      * @returns {Function} unsubscribe
      */
     subscribe(campaignId, callback) {
-        if (!this.clients.has(campaignId)) {
-            this.clients.set(campaignId, new Set());
+        if (!this._connections.has(campaignId)) {
+            this._connect(campaignId);
         }
-        this.clients.get(campaignId).add(callback);
-        console.log(`[WS] Client subscribed to campaign: ${campaignId}`);
+
+        const entry = this._connections.get(campaignId);
+        entry.callbacks.add(callback);
+        console.log(`[WS] Subscribed to campaign: ${campaignId}`);
 
         return () => {
-            this.clients.get(campaignId)?.delete(callback);
-            console.log(`[WS] Client unsubscribed from: ${campaignId}`);
+            entry.callbacks.delete(callback);
+            if (entry.callbacks.size === 0) {
+                entry.socket?.close();
+                this._connections.delete(campaignId);
+                console.log(`[WS] Connection closed for campaign: ${campaignId}`);
+            }
         };
     }
 
-    /**
-     * 向指定 Campaign 的所有客户端广播消息
-     */
-    broadcast(campaignId, message) {
-        const listeners = this.clients.get(campaignId);
-        if (!listeners || listeners.size === 0) return;
-        listeners.forEach(cb => cb(message));
-    }
+    // ── Internal ──────────────────────────────────────────────────────────
 
-    /**
-     * 连接 EventBus，将所有关键事件转发给 WS 客户端
-     */
-    _subscribeToEventBus() {
-        Object.entries(WS_EVENT_MAP).forEach(([eventType, wsType]) => {
-            globalEventBus.subscribe(eventType, (event) => {
-                if (!event.campaign_id) return;
+    _connect(campaignId) {
+        const socket = new WebSocket(`${WS_BASE}/${campaignId}`);
+        const entry = { socket, callbacks: new Set() };
+        this._connections.set(campaignId, entry);
 
-                const message = {
-                    type:        wsType,
-                    campaign_id: event.campaign_id,
-                    payload:     event.payload,
-                    timestamp:   event.occurred_at,
-                };
+        socket.onopen = () => {
+            console.log(`[WS] Connected: ${campaignId}`);
+        };
 
-                this.broadcast(event.campaign_id, message);
-            });
-        });
+        socket.onmessage = (event) => {
+            try {
+                const message = JSON.parse(event.data);
 
-        console.log(`[WS] Broadcaster listening to ${Object.keys(WS_EVENT_MAP).length} event types`);
+                // Handle pong / system messages silently
+                if (message.type === 'pong' || message.type === 'connected') return;
+
+                entry.callbacks.forEach(cb => cb(message));
+            } catch (err) {
+                console.warn('[WS] Failed to parse message:', err);
+            }
+        };
+
+        socket.onerror = (err) => {
+            console.error(`[WS] Error on campaign ${campaignId}:`, err);
+        };
+
+        socket.onclose = (event) => {
+            console.log(`[WS] Disconnected: ${campaignId} (code ${event.code})`);
+            this._connections.delete(campaignId);
+
+            // Reconnect after 3s if there are still active subscribers
+            if (entry.callbacks.size > 0) {
+                setTimeout(() => {
+                    if (entry.callbacks.size > 0) {
+                        console.log(`[WS] Reconnecting: ${campaignId}`);
+                        this._connect(campaignId);
+                        // Re-attach existing callbacks to new connection
+                        const newEntry = this._connections.get(campaignId);
+                        if (newEntry) newEntry.callbacks = entry.callbacks;
+                    }
+                }, 3000);
+            }
+        };
+
+        // Keepalive ping every 30s
+        const pingInterval = setInterval(() => {
+            if (socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({ type: 'ping' }));
+            } else {
+                clearInterval(pingInterval);
+            }
+        }, 30_000);
     }
 }
 
-// 全局单例
+// Global singleton
 export const wsBroadcaster = new WSBroadcaster();

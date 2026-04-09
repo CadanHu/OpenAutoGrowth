@@ -1,0 +1,12 @@
+{
+  "name": "content_gen",
+  "description": "A/B 文案生成 Agent，调用 Claude 生成多变体营销文案（hook + body + CTA）。",
+  "version": "1.0.0",
+  "url": "http://localhost:9393/v1/agents/content_gen",
+  "provider": { "organization": "OpenAutoGrowth" },
+  "capabilities": { "streaming": true, "pushNotifications": false, "stateTransitionHistory": true },
+  "authentication": { "schemes": ["bearer"] },
+  "skills": [
+    { "id": "generate_copies", "name": "生成文案变体", "inputModes": ["text"], "outputModes": ["text"] }
+  ]
+}

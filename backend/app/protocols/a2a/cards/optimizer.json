@@ -1,0 +1,13 @@
+{
+  "name": "optimizer",
+  "description": "优化决策 Agent，RuleEngine 驱动，决定是否进入下一轮优化循环。",
+  "version": "1.0.0",
+  "url": "http://localhost:9393/v1/agents/optimizer",
+  "provider": { "organization": "OpenAutoGrowth" },
+  "capabilities": { "streaming": false, "pushNotifications": false, "stateTransitionHistory": true },
+  "authentication": { "schemes": ["bearer"] },
+  "skills": [
+    { "id": "evaluate_rules", "name": "规则评估",   "inputModes": ["text"], "outputModes": ["text"] },
+    { "id": "apply_actions",  "name": "执行优化动作","inputModes": ["text"], "outputModes": ["text"] }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "name": "strategy",
+  "description": "渠道评分 + 预算分配 + 受众定向决策。",
+  "version": "1.0.0",
+  "url": "http://localhost:9393/v1/agents/strategy",
+  "provider": { "organization": "OpenAutoGrowth" },
+  "capabilities": { "streaming": false, "pushNotifications": false, "stateTransitionHistory": true },
+  "authentication": { "schemes": ["bearer"] },
+  "skills": [
+    { "id": "score_channels",  "name": "渠道评分",   "inputModes": ["text"], "outputModes": ["text"] },
+    { "id": "allocate_budget", "name": "预算分配",   "inputModes": ["text"], "outputModes": ["text"] }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "name": "analysis",
+  "description": "数据分析 Agent，负责归因分析、异常检测、A/B 胜者判断。",
+  "version": "1.0.0",
+  "url": "http://localhost:9393/v1/agents/analysis",
+  "provider": { "organization": "OpenAutoGrowth" },
+  "capabilities": { "streaming": false, "pushNotifications": false, "stateTransitionHistory": true },
+  "authentication": { "schemes": ["bearer"] },
+  "skills": [
+    { "id": "pull_metrics",    "name": "拉取指标",   "inputModes": ["text"], "outputModes": ["text"] },
+    { "id": "detect_anomalies","name": "检测异常",   "inputModes": ["text"], "outputModes": ["text"] }
+  ]
+}

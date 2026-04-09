@@ -1,0 +1,13 @@
+{
+  "name": "multimodal",
+  "description": "视觉素材生成 Agent，支持多平台尺寸推断，优先降级策略。",
+  "version": "1.0.0",
+  "url": "http://localhost:9393/v1/agents/multimodal",
+  "provider": { "organization": "OpenAutoGrowth" },
+  "capabilities": { "streaming": false, "pushNotifications": false, "stateTransitionHistory": true },
+  "authentication": { "schemes": ["bearer"] },
+  "skills": [
+    { "id": "generate_images", "name": "生成图片素材", "inputModes": ["text"], "outputModes": ["text", "file"] },
+    { "id": "generate_videos", "name": "生成视频素材", "inputModes": ["text"], "outputModes": ["text", "file"] }
+  ]
+}

@@ -1,210 +1,90 @@
 /**
- * API Routes — REST API Layer
- * 基于 Campaign 状态机设计，按 docs/architecture/07-data-flow-service-boundary.md 规范
- *
- * 生产环境：此文件对接 Express / Fastify；当前为纯 JS 模拟层，供 UI 调用。
+ * CampaignAPI — 对接后端 REST API (:9393)
+ * 替换原内存模拟层，所有操作通过 fetch 调用 FastAPI 后端。
  */
-import { globalEventBus } from '../core/EventBus.js';
+
+const API_BASE = 'http://localhost:9393/v1';
 
 export class CampaignAPI {
-    constructor({ orchestrator, memory } = {}) {
-        this.orchestrator = orchestrator;
-        this.memory       = memory;
-        this.campaigns    = new Map(); // 简化存储；生产替换为 DB 层
+    constructor() {
+        // orchestrator/memory 参数保留以兼容 main.js 构造调用，但实际不使用
     }
 
-    /**
-     * POST /v1/campaigns
-     * 创建 Campaign（状态: DRAFT）
-     */
+    // ── POST /v1/campaigns ─────────────────────────────────────────────────
+
     async createCampaign(body) {
-        const { goal, budget, timeline, kpi, constraints, name } = body;
-
-        // 输入校验
-        if (!goal)          return this._error(400, 'goal is required');
-        if (!budget?.total) return this._error(400, 'budget.total is required');
-        if (!kpi?.metric)   return this._error(400, 'kpi.metric is required');
-
-        const campaign = {
-            campaign_id:      `camp_${Date.now()}`,
-            name:             name || goal.slice(0, 60),
-            goal,
-            budget,
-            timeline,
-            kpi,
-            constraints,
-            status:           'DRAFT',
-            loop_count:       0,
-            created_at:       new Date().toISOString(),
-            updated_at:       new Date().toISOString(),
-        };
-
-        this.campaigns.set(campaign.campaign_id, campaign);
-        globalEventBus.publish('CampaignCreated', { campaign }, campaign.campaign_id);
-
-        return this._ok(201, campaign);
+        return this._request('POST', '/campaigns', body);
     }
 
-    /**
-     * GET /v1/campaigns/:id
-     */
-    async getCampaign(id) {
-        const campaign = this.campaigns.get(id);
-        if (!campaign) return this._error(404, `Campaign ${id} not found`);
-        return this._ok(200, campaign);
-    }
+    // ── GET /v1/campaigns ─────────────────────────────────────────────────
 
-    /**
-     * GET /v1/campaigns
-     */
     async listCampaigns({ status, limit = 20, offset = 0 } = {}) {
-        let list = [...this.campaigns.values()];
-        if (status) list = list.filter(c => c.status === status);
-        return this._ok(200, {
-            total: list.length,
-            items: list.slice(offset, offset + limit),
-        });
+        const params = new URLSearchParams({ limit, offset });
+        if (status) params.set('status', status);
+        return this._request('GET', `/campaigns?${params}`);
     }
 
-    /**
-     * POST /v1/campaigns/:id/start
-     * 触发规划（DRAFT → PLANNING）
-     */
+    // ── GET /v1/campaigns/:id ─────────────────────────────────────────────
+
+    async getCampaign(id) {
+        return this._request('GET', `/campaigns/${id}`);
+    }
+
+    // ── POST /v1/campaigns/:id/start ──────────────────────────────────────
+
     async startCampaign(id) {
-        const campaign = this.campaigns.get(id);
-        if (!campaign) return this._error(404, `Campaign ${id} not found`);
-
-        const allowed = ['DRAFT'];
-        if (!allowed.includes(campaign.status)) {
-            return this._error(409, `Cannot start campaign in status: ${campaign.status}`);
-        }
-
-        this._updateStatus(campaign, 'PLANNING');
-        console.log(`[API] Campaign ${id} → PLANNING`);
-
-        // 异步触发 Orchestrator（非阻塞）
-        if (this.orchestrator) {
-            this.orchestrator.processGoal({
-                goal:        campaign.goal,
-                budget:      campaign.budget,
-                timeline:    campaign.timeline,
-                kpi:         campaign.kpi,
-                constraints: campaign.constraints,
-            }).catch(err => console.error('[API] Orchestrator error:', err));
-        }
-
-        return this._ok(202, { campaign_id: id, status: 'PLANNING', message: 'Campaign planning started' });
+        return this._request('POST', `/campaigns/${id}/start`);
     }
 
-    /**
-     * POST /v1/campaigns/:id/approve
-     * 人工审批通过（PENDING_REVIEW → PRODUCTION）
-     */
-    async approveCampaign(id, { reviewer } = {}) {
-        const campaign = this.campaigns.get(id);
-        if (!campaign) return this._error(404, `Campaign ${id} not found`);
-        if (campaign.status !== 'PENDING_REVIEW') {
-            return this._error(409, `Campaign must be PENDING_REVIEW to approve`);
-        }
+    // ── POST /v1/campaigns/:id/pause ─────────────────────────────────────
 
-        this._updateStatus(campaign, 'PRODUCTION');
-        campaign.approved_by  = reviewer || 'auto';
-        campaign.approved_at  = new Date().toISOString();
-
-        globalEventBus.publish('CampaignApproved', { reviewer }, id);
-        return this._ok(200, { status: 'PRODUCTION', approved_by: campaign.approved_by });
+    async pauseCampaign(id) {
+        return this._request('POST', `/campaigns/${id}/pause`);
     }
 
-    /**
-     * POST /v1/campaigns/:id/reject
-     * 审批拒绝（PENDING_REVIEW → DRAFT）
-     */
-    async rejectCampaign(id, { reason } = {}) {
-        const campaign = this.campaigns.get(id);
-        if (!campaign) return this._error(404, `Campaign ${id} not found`);
-        if (campaign.status !== 'PENDING_REVIEW') {
-            return this._error(409, `Campaign must be PENDING_REVIEW to reject`);
-        }
+    // ── POST /v1/campaigns/:id/resume ────────────────────────────────────
 
-        this._updateStatus(campaign, 'DRAFT');
-        campaign.rejection_reason = reason;
-        return this._ok(200, { status: 'DRAFT', reason });
-    }
-
-    /**
-     * POST /v1/campaigns/:id/pause
-     * 人工暂停（任意活跃状态 → PAUSED）
-     */
-    async pauseCampaign(id, { reason } = {}) {
-        const campaign = this.campaigns.get(id);
-        if (!campaign) return this._error(404, `Campaign ${id} not found`);
-
-        const pauseable = ['DEPLOYED', 'MONITORING', 'OPTIMIZING'];
-        if (!pauseable.includes(campaign.status)) {
-            return this._error(409, `Cannot pause campaign in status: ${campaign.status}`);
-        }
-
-        this._updateStatus(campaign, 'PAUSED');
-        campaign.pause_reason = reason;
-        globalEventBus.publish('CampaignPaused', { reason }, id);
-        return this._ok(200, { status: 'PAUSED' });
-    }
-
-    /**
-     * POST /v1/campaigns/:id/resume
-     * 恢复（PAUSED → MONITORING）
-     */
     async resumeCampaign(id) {
-        const campaign = this.campaigns.get(id);
-        if (!campaign) return this._error(404, `Campaign ${id} not found`);
-        if (campaign.status !== 'PAUSED') {
-            return this._error(409, `Campaign must be PAUSED to resume`);
-        }
-
-        this._updateStatus(campaign, 'MONITORING');
-        return this._ok(200, { status: 'MONITORING' });
+        return this._request('POST', `/campaigns/${id}/resume`);
     }
 
-    /**
-     * POST /v1/campaigns/:id/stop
-     * 终止（任意状态 → COMPLETED）
-     */
-    async stopCampaign(id, { reason } = {}) {
-        const campaign = this.campaigns.get(id);
-        if (!campaign) return this._error(404, `Campaign ${id} not found`);
+    // ── POST /v1/campaigns/:id/complete ──────────────────────────────────
 
-        this._updateStatus(campaign, 'COMPLETED');
-        campaign.stop_reason  = reason;
-        campaign.completed_at = new Date().toISOString();
-
-        globalEventBus.publish('CampaignCompleted', { reason }, id);
-        return this._ok(200, { status: 'COMPLETED' });
+    async completeCampaign(id) {
+        return this._request('POST', `/campaigns/${id}/complete`);
     }
 
-    /**
-     * GET /v1/campaigns/:id/events
-     * 查看领域事件日志
-     */
+    // ── GET /v1/campaigns/:id/events ─────────────────────────────────────
+
     async getCampaignEvents(id) {
-        const events = globalEventBus.getHistory(id);
-        return this._ok(200, { campaign_id: id, total: events.length, events });
+        return this._request('GET', `/campaigns/${id}/events`);
     }
 
-    // ── Helpers ─────────────────────────────────────────────
+    // ── Internal fetch helper ─────────────────────────────────────────────
 
-    _updateStatus(campaign, newStatus) {
-        const old = campaign.status;
-        campaign.status     = newStatus;
-        campaign.updated_at = new Date().toISOString();
-        globalEventBus.publish('StatusChanged', { old_status: old, new_status: newStatus }, campaign.campaign_id);
-        console.log(`[API] Campaign ${campaign.campaign_id}: ${old} → ${newStatus}`);
-    }
+    async _request(method, path, body = null) {
+        try {
+            const options = {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+            };
+            if (body) options.body = JSON.stringify(body);
 
-    _ok(statusCode, data) {
-        return { statusCode, success: true, data, timestamp: new Date().toISOString() };
-    }
+            const res = await fetch(`${API_BASE}${path}`, options);
+            const json = await res.json();
 
-    _error(statusCode, message) {
-        return { statusCode, success: false, error: message, timestamp: new Date().toISOString() };
+            if (!res.ok) {
+                return {
+                    success: false,
+                    error: json.detail || json.error?.message || `HTTP ${res.status}`,
+                };
+            }
+
+            // FastAPI returns data directly; normalize to { success, data } envelope
+            return { success: true, data: json };
+        } catch (err) {
+            console.error(`[API] ${method} ${path} failed:`, err);
+            return { success: false, error: err.message };
+        }
     }
 }

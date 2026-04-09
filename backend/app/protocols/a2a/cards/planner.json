@@ -1,0 +1,18 @@
+{
+  "name": "planner",
+  "description": "场景检测 + DAG 执行计划生成。根据 Campaign goal 推断业务场景，选择最优任务模板。",
+  "version": "1.0.0",
+  "url": "http://localhost:9393/v1/agents/planner",
+  "provider": { "organization": "OpenAutoGrowth" },
+  "capabilities": { "streaming": false, "pushNotifications": false, "stateTransitionHistory": true },
+  "authentication": { "schemes": ["bearer"] },
+  "skills": [
+    {
+      "id": "create_plan",
+      "name": "创建执行计划",
+      "description": "根据目标、预算、KPI 生成 DAG Plan（含依赖关系）",
+      "inputModes": ["text"],
+      "outputModes": ["text"]
+    }
+  ]
+}

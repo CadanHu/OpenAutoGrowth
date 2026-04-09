@@ -161,15 +161,24 @@ class DashboardController {
             return;
         }
 
-        this.activeCampaignId = response.data.campaign_id;
+        this.activeCampaignId = response.data.id;
+        this.log(`Campaign created: ${this.activeCampaignId.slice(0, 8)}…`, 'success');
+        this._updateCampaignBadge(response.data.status);
 
-        // 订阅实时 WS 推送
+        // 订阅后端 WebSocket 推送 → 驱动 UI
         wsBroadcaster.subscribe(this.activeCampaignId, (msg) => {
             console.log('[WS →]', msg.type, msg.payload);
+            this._handleWsMessage(msg);
         });
 
         // 触发规划启动
-        await api.startCampaign(this.activeCampaignId);
+        const startResp = await api.startCampaign(this.activeCampaignId);
+        if (startResp.success) {
+            this._updateCampaignBadge('PLANNING');
+            this.log(`Pipeline started — job ${startResp.data.job_id?.slice(0, 8)}…`, 'info');
+        } else {
+            this.log(`Start failed: ${startResp.error}`, 'error');
+        }
         this._setButtonState('btn-launch', 'Launch Campaign', false);
     }
 
@@ -215,6 +224,51 @@ class DashboardController {
         const optimizerAgent = new OptimizerAgent();
         await optimizerAgent._optimize(report, this.activeCampaignId || 'demo');
         this._setButtonState('btn-optimize', 'Run Optimizer', false);
+    }
+
+    // ── WebSocket message router ─────────────────────────────────
+
+    _handleWsMessage(msg) {
+        const { type, payload, campaign_id } = msg;
+        switch (type) {
+            case 'campaign.status_changed':
+                this.log(`Campaign ${campaign_id?.slice(0,8)}: ${payload.old_status} → <strong>${payload.new_status}</strong>`, 'info');
+                this._updateCampaignBadge(payload.new_status);
+                break;
+            case 'campaign.plan_ready':
+                this.log(`Planner generated DAG with ${payload.plan?.tasks?.length ?? '?'} tasks (scenario: ${payload.plan?.scenario})`, 'info');
+                this._updateStat('gen-count', `${payload.plan?.tasks?.length ?? '?'} Tasks`);
+                break;
+            case 'task.content_generated':
+                this.log(`ContentGen produced ${payload.bundle?.variants?.length ?? 0} A/B variants`, 'success');
+                this._updateStat('gen-count', `${payload.bundle?.variants?.length ?? 0} Variants`);
+                break;
+            case 'task.assets_generated':
+                this.log(`Multimodal generated ${payload.asset_ids?.length ?? 0} ${payload.type}(s)`, 'success');
+                break;
+            case 'task.strategy_decided':
+                this.log(`Strategy: distributing budget across ${payload.strategy?.channel_plan?.map(c => c.channel).join(', ')}`, 'info');
+                break;
+            case 'task.ad_deployed':
+                this.log(`Ads deployed to ${payload.platforms?.join(', ')} ✅`, 'success');
+                this._addFeedItem(`✓ Deployed to ${payload.platforms?.join(' & ')}`);
+                this._updateStat('exec-reach', '87.4%');
+                break;
+            case 'metrics.updated':
+                this.log(`Analytics: ROAS ${payload.metrics?.roas?.toFixed(2)}x | CTR ${((payload.metrics?.ctr ?? 0) * 100).toFixed(2)}%`, 'info');
+                this._updateStat('roi-value', `+${((payload.metrics?.roas - 1) * 100)?.toFixed(1)}%`);
+                this._animateChartBars(payload.metrics?.roas);
+                break;
+            case 'optimization.applied':
+                this.log(`Optimizer fired: ${payload.actions?.map(a => a.type).join(', ') || 'NONE'}`, 'warning');
+                this._updateOptStatus(`Loop #${payload.loop_count} — ${payload.actions?.map(a => a.type).join(', ')}`);
+                break;
+            case 'anomaly.detected':
+                this.log(`⚠️ Anomaly: ${payload.metric} on ${payload.channel} (${payload.severity})`, 'error');
+                break;
+            default:
+                this.log(`[WS] ${type}`, 'info');
+        }
     }
 
     // ── UI Helpers ───────────────────────────────────────────────
