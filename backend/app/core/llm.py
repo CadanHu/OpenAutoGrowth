@@ -109,7 +109,13 @@ class LLMClient:
             if api_key:
                 headers["Authorization"] = f"Bearer {api_key}"
 
-            url = f"{base_url}/chat/completions" if "/chat/completions" not in base_url else base_url
+            url = base_url
+            if "/chat/completions" not in url:
+                if "?" in url:
+                    url = url.replace("?", "/chat/completions?", 1)
+                else:
+                    url = url.rstrip("/") + "/chat/completions"
+
             logger.info("llm_request", provider="openai-compat", model=model, url=url)
             response = await client.post(url, json=payload, headers=headers)
             response.raise_for_status()
