@@ -309,26 +309,30 @@ class DashboardController {
 
     async _publishArticle() {
         this._closeArticleModal();
-        this.log('Publishing article to Zhihu...', 'info');
+        this.log('正在保存草稿到知乎...', 'info');
 
         const title = document.getElementById('article-title-input').value;
         const body = document.getElementById('article-body-input').value;
 
-        // Trigger execution agent for Zhihu via Python backend
-        // We don't await polling here to keep UI responsive as requested
         api.callAgent('channel_exec', {
             campaign_id: this.activeCampaignId || 'demo',
             strategy: { channel_plan: [{ channel: 'zhihu' }] },
             content: { variants: [{ title, body, channel: 'zhihu' }] }
         }).then(response => {
             if (response.success) {
-                this.log('Article successfully published to Zhihu!', 'success');
+                const draftUrl = response.data?.deployed_ads?.ad_ids?.[0];
+                if (draftUrl && draftUrl.startsWith('http')) {
+                    this.log(
+                        `草稿已保存 → <a href="${draftUrl}" target="_blank" style="color:#6366f1">在知乎中查看并发表</a>`,
+                        'success'
+                    );
+                } else {
+                    this.log('草稿已保存到知乎，请前往知乎草稿箱发表。', 'success');
+                }
             } else {
-                this.log(`Publishing failed: ${response.error}`, 'error');
+                this.log(`保存草稿失败: ${response.error}`, 'error');
             }
         });
-
-        this.log('Article queued for publishing to Zhihu', 'success');
     }
 
     async _triggerExecution() {

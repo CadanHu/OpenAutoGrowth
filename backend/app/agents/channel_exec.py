@@ -51,6 +51,13 @@ class ZhihuAdapter:
             extensions=["tables", "fenced_code", "nl2br"],
         )
 
+    def _xsrf(self) -> str:
+        for part in settings.zhihu_cookie.split(";"):
+            part = part.strip()
+            if part.startswith("_xsrf="):
+                return part[len("_xsrf="):]
+        return ""
+
     def _headers(self) -> dict:
         return {
             "Cookie": settings.zhihu_cookie,
@@ -60,6 +67,7 @@ class ZhihuAdapter:
             "Referer": "https://zhuanlan.zhihu.com/write",
             "x-api-version": "3.0.91",
             "x-requested-with": "fetch",
+            "x-xsrftoken": self._xsrf(),
             "User-Agent": (
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -68,6 +76,7 @@ class ZhihuAdapter:
         }
 
     async def deploy(self, channel_config: dict, content: dict, assets: dict) -> list[str]:
+        """Save article as Zhihu draft. User reviews and publishes manually."""
         if not settings.zhihu_cookie:
             logger.warning("zhihu_no_cookie_configured")
             return ["zhihu_failed_no_cookie"]
@@ -77,36 +86,24 @@ class ZhihuAdapter:
         body_md = variant.get("body", "")
         body_html = self._md_to_html(body_md)
 
-        logger.info("zhihu_deploy_start", title=title)
+        logger.info("zhihu_save_draft_start", title=title)
 
         async with httpx.AsyncClient(timeout=30) as client:
-            # Step 1: create draft
-            create_resp = await client.post(
+            resp = await client.post(
                 f"{self.BASE}/api/articles",
                 headers=self._headers(),
                 json={"title": title, "content": body_html, "table_of_contents": False},
             )
-            logger.info("zhihu_create_draft", status=create_resp.status_code,
-                        body=create_resp.text[:300])
-            create_resp.raise_for_status()
-            article_id = create_resp.json().get("id")
+            logger.info("zhihu_save_draft", status=resp.status_code, body=resp.text[:300])
+            resp.raise_for_status()
+
+            article_id = resp.json().get("id")
             if not article_id:
-                raise ValueError(f"No article id in response: {create_resp.text[:200]}")
+                raise ValueError(f"No article id in response: {resp.text[:200]}")
 
-            # Step 2: publish
-            pub_resp = await client.put(
-                f"{self.BASE}/api/articles/{article_id}/publish",
-                headers=self._headers(),
-                json={"title": title, "content": body_html,
-                      "topics": [], "table_of_contents": False},
-            )
-            logger.info("zhihu_publish", status=pub_resp.status_code,
-                        body=pub_resp.text[:300])
-            pub_resp.raise_for_status()
-
-            url = f"https://zhuanlan.zhihu.com/p/{article_id}"
-            logger.info("zhihu_published_ok", article_id=article_id, url=url)
-            return [f"zhihu_{article_id}"]
+            draft_url = f"https://zhuanlan.zhihu.com/p/{article_id}/edit"
+            logger.info("zhihu_draft_saved", article_id=article_id, draft_url=draft_url)
+            return [draft_url]
 
 
 _ADAPTERS = {
