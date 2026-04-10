@@ -81,16 +81,19 @@ class LLMClient:
             raise ValueError(f"Unsupported provider: {provider}")
 
     async def _anthropic_completion(self, messages, system, model, max_tokens):
+        logger.info("llm_request", provider="anthropic", model=model or settings.anthropic_model)
         response = await self.anthropic.messages.create(
             model=model or settings.anthropic_model,
             max_tokens=max_tokens or settings.anthropic_max_tokens,
             system=system,
             messages=messages,
         )
+        logger.info("llm_response", provider="anthropic", tokens=response.usage.output_tokens)
         return response.content[0].text
 
     async def _openai_compatible_completion(self, base_url, api_key, messages, system, model, max_tokens):
-        async with httpx.AsyncClient() as client:
+        # NOTE: Timeout must be 180s for long technical articles
+        async with httpx.AsyncClient(timeout=180.0) as client:
             full_messages = []
             if system:
                 full_messages.append({"role": "system", "content": system})
@@ -107,9 +110,11 @@ class LLMClient:
                 headers["Authorization"] = f"Bearer {api_key}"
 
             url = f"{base_url}/chat/completions" if "/chat/completions" not in base_url else base_url
-            response = await client.post(url, json=payload, headers=headers, timeout=60.0)
+            logger.info("llm_request", provider="openai-compat", model=model, url=url)
+            response = await client.post(url, json=payload, headers=headers)
             response.raise_for_status()
             data = response.json()
+            logger.info("llm_response", provider="openai-compat", model=model)
             return data["choices"][0]["message"]["content"]
 
 llm_client = LLMClient()

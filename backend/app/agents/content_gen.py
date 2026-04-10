@@ -43,9 +43,10 @@ async def _get_github_readme(url: str) -> str:
             return ""
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+# NOTE: Retry 2x to fit within 300s job limit (2 * 180s > 300s, but LLM usually faster)
+@retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=2, max=10))
 async def _call_llm(prompt: str, is_article: bool = False) -> list[dict]:
-    """Call LLM to generate copy variants. Retries 3x on transient errors."""
+    """Call LLM to generate copy variants. Retries 2x on transient errors."""
     system_prompt = (
         "You are a senior performance marketing copywriter and technical evangelist. "
         "Return a JSON array of copy variants."
@@ -53,13 +54,14 @@ async def _call_llm(prompt: str, is_article: bool = False) -> list[dict]:
 
     if is_article:
         system_prompt += (
-            " Each variant must have: variant_label (A/B/C), title, body (the full Markdown article), channel. "
-            "The body should be a high-quality, professional technical article in Markdown format, "
+            " Each variant must have: variant_label (A), title, body (the full Markdown article), channel. "
+            "Generate ONLY 1 high-quality, professional technical article in Markdown format, "
             "suitable for Zhihu, Juejin, or CSDN. "
         )
     else:
         system_prompt += (
             " Each variant must have: variant_label (A/B/C), hook, body, cta, channel. "
+            "Generate 3 A/B/C copy variants optimized for these channels."
         )
 
     system_prompt += "Output ONLY valid JSON, no markdown outside the JSON structure."
@@ -67,14 +69,23 @@ async def _call_llm(prompt: str, is_article: bool = False) -> list[dict]:
     raw = await llm_client.chat_completion(
         system=system_prompt,
         messages=[{"role": "user", "content": prompt}],
+        max_tokens=8192 if is_article else 2048, # NOTE: Technical articles need more tokens
     )
-    # Clean up potential markdown code blocks if the LLM includes them
-    if "```json" in raw:
-        raw = raw.split("```json")[1].split("```")[0].strip()
-    elif raw.startswith("```"):
-        raw = raw.split("```")[1].split("```")[0].strip()
 
-    return json.loads(raw)
+    # NOTE: Extraction logic using find/rfind to handle nested code blocks in article body
+    try:
+        start = raw.find('[')
+        end = raw.rfind(']') + 1
+        if start != -1 and end != 0:
+            raw = raw[start:end]
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        # Fallback to simple cleaning
+        if "```json" in raw:
+            raw = raw.split("```json")[1].split("```")[0].strip()
+        elif raw.startswith("```"):
+            raw = raw.split("```")[1].split("```")[0].strip()
+        return json.loads(raw)
 
 
 async def content_gen_node(state: CampaignState) -> dict:
