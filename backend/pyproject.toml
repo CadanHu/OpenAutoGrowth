@@ -37,6 +37,7 @@ dependencies = [
     "arq>=0.26,<0.27",
 
     # Utilities
+    "markdown>=3.7",
     "python-dotenv>=1.0,<2.0",
     "structlog>=24.4,<25.0",
     "tenacity>=9.0,<10.0",

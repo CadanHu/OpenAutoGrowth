@@ -42,25 +42,71 @@ class GoogleAdapter:
 
 
 class ZhihuAdapter:
-    async def deploy(self, channel_config: dict, content: dict, assets: dict) -> list[str]:
-        """Deploy article to Zhihu."""
-        logger.info("zhihu_deploy_start")
+    BASE = "https://zhuanlan.zhihu.com"
 
+    def _md_to_html(self, md: str) -> str:
+        import markdown as md_lib
+        return md_lib.markdown(
+            md,
+            extensions=["tables", "fenced_code", "nl2br"],
+        )
+
+    def _headers(self) -> dict:
+        return {
+            "Cookie": settings.zhihu_cookie,
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/plain, */*",
+            "Origin": "https://zhuanlan.zhihu.com",
+            "Referer": "https://zhuanlan.zhihu.com/write",
+            "x-api-version": "3.0.91",
+            "x-requested-with": "fetch",
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/146.0.0.0 Safari/537.36"
+            ),
+        }
+
+    async def deploy(self, channel_config: dict, content: dict, assets: dict) -> list[str]:
         if not settings.zhihu_cookie:
             logger.warning("zhihu_no_cookie_configured")
             return ["zhihu_failed_no_cookie"]
 
-        # In MVP, we simulate the network call to Zhihu's internal API
-        # Actual implementation would use httpx to POST to https://zhuanlan.zhihu.com/api/articles
-        # with the provided Cookie and Markdown content converted to Zhihu's format.
+        variant = (content.get("variants") or [{}])[0]
+        title = variant.get("title", "无标题")
+        body_md = variant.get("body", "")
+        body_html = self._md_to_html(body_md)
 
-        async with httpx.AsyncClient() as client:
-            # Placeholder for actual Zhihu API interaction
-            # For MVP/Safety, we log the intent and return a simulated ID
-            logger.info("zhihu_article_published_simulated",
-                        title=content.get("variants", [{}])[0].get("title"))
+        logger.info("zhihu_deploy_start", title=title)
 
-        return [f"zhihu_art_{uuid.uuid4().hex[:8]}"]
+        async with httpx.AsyncClient(timeout=30) as client:
+            # Step 1: create draft
+            create_resp = await client.post(
+                f"{self.BASE}/api/articles",
+                headers=self._headers(),
+                json={"title": title, "content": body_html, "table_of_contents": False},
+            )
+            logger.info("zhihu_create_draft", status=create_resp.status_code,
+                        body=create_resp.text[:300])
+            create_resp.raise_for_status()
+            article_id = create_resp.json().get("id")
+            if not article_id:
+                raise ValueError(f"No article id in response: {create_resp.text[:200]}")
+
+            # Step 2: publish
+            pub_resp = await client.put(
+                f"{self.BASE}/api/articles/{article_id}/publish",
+                headers=self._headers(),
+                json={"title": title, "content": body_html,
+                      "topics": [], "table_of_contents": False},
+            )
+            logger.info("zhihu_publish", status=pub_resp.status_code,
+                        body=pub_resp.text[:300])
+            pub_resp.raise_for_status()
+
+            url = f"https://zhuanlan.zhihu.com/p/{article_id}"
+            logger.info("zhihu_published_ok", article_id=article_id, url=url)
+            return [f"zhihu_{article_id}"]
 
 
 _ADAPTERS = {
