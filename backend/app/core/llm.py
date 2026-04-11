@@ -81,15 +81,28 @@ class LLMClient:
             raise ValueError(f"Unsupported provider: {provider}")
 
     async def _anthropic_completion(self, messages, system, model, max_tokens):
+<<<<<<< HEAD
         logger.info("llm_request", provider="anthropic", model=model or settings.anthropic_model)
+=======
+        resolved_model = model or settings.anthropic_model
+        logger.info("llm_request", provider="anthropic", model=resolved_model,
+                    system=system, messages=messages)
+>>>>>>> def409c (feat: upgrade to dynamic LLM planner and enhance real-time pipeline visualization)
         response = await self.anthropic.messages.create(
-            model=model or settings.anthropic_model,
+            model=resolved_model,
             max_tokens=max_tokens or settings.anthropic_max_tokens,
             system=system,
             messages=messages,
         )
+<<<<<<< HEAD
         logger.info("llm_response", provider="anthropic", tokens=response.usage.output_tokens)
         return response.content[0].text
+=======
+        result = response.content[0].text
+        logger.info("llm_response", provider="anthropic", model=resolved_model,
+                    response=result)
+        return result
+>>>>>>> def409c (feat: upgrade to dynamic LLM planner and enhance real-time pipeline visualization)
 
     async def _openai_compatible_completion(self, base_url, api_key, messages, system, model, max_tokens):
         # NOTE: Timeout must be 180s for long technical articles
@@ -109,6 +122,7 @@ class LLMClient:
             if api_key:
                 headers["Authorization"] = f"Bearer {api_key}"
 
+<<<<<<< HEAD
             url = base_url
             if "/chat/completions" not in url:
                 if "?" in url:
@@ -122,5 +136,19 @@ class LLMClient:
             data = response.json()
             logger.info("llm_response", provider="openai-compat", model=model)
             return data["choices"][0]["message"]["content"]
+=======
+            url = f"{base_url}/chat/completions" if "/chat/completions" not in base_url else base_url
+            logger.info("llm_request", provider=url.split("/")[2], model=model,
+                        messages=full_messages)
+            # NOTE: 180s timeout is intentional — article generation takes ~90s.
+            # Do NOT reduce this value. (Previously regressed to 60s by bot commit a12fe48)
+            response = await client.post(url, json=payload, headers=headers, timeout=180.0)
+            response.raise_for_status()
+            data = response.json()
+            result = data["choices"][0]["message"]["content"]
+            logger.info("llm_response", provider=url.split("/")[2], model=model,
+                        response=result)
+            return result
+>>>>>>> def409c (feat: upgrade to dynamic LLM planner and enhance real-time pipeline visualization)
 
 llm_client = LLMClient()

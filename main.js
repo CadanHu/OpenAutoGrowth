@@ -69,6 +69,18 @@ class DashboardController {
     constructor() {
         this.activeCampaignId = null;
         this.logLines = 0;
+        this.launchType = 'campaign'; // 'campaign' or 'article'
+        this.pipelineMapping = {
+            'PLANNING':          ['node-orchestrator', 'node-planner', 'arrow-1', 'arrow-2'],
+            'STRATEGY':          ['node-strategy', 'arrow-2'],
+            'CONTENT_GEN':       ['node-contentgen', 'arrow-2'],
+            'MULTIMODAL':        ['node-multimodal', 'arrow-2'],
+            'EXECUTING':         ['node-channelexec', 'arrow-3'],
+            'DEPLOYED':          ['node-channelexec', 'arrow-3'],
+            'ANALYZING':         ['node-analysis', 'arrow-4'],
+            'OPTIMIZING':        ['node-optimizer', 'arrow-5'],
+            'COMPLETED':         ['arrow-loop']
+        };
     }
 
     init() {
@@ -77,6 +89,36 @@ class DashboardController {
         this._subscribeToEvents();
         this._startAnimations();
         this.log(i18n.t('status_online'), 'success');
+        this._updatePipeline('IDLE'); // Initial state should be idle
+    }
+
+    _updatePipeline(status) {
+        console.log(`[UI] Updating pipeline for status: ${status}`);
+        
+        // Define which nodes should be ON for each stage (Cumulative)
+        const stageProgress = {
+            'IDLE':            [],
+            'PLANNING':        ['node-orchestrator', 'node-planner', 'arrow-1'],
+            'STRATEGY':        ['node-orchestrator', 'node-planner', 'node-strategy', 'arrow-1', 'arrow-2'],
+            'CONTENT_GEN':     ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'arrow-1', 'arrow-2'],
+            'MULTIMODAL':      ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'node-multimodal', 'arrow-1', 'arrow-2'],
+            'DEPLOYED':        ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'node-multimodal', 'node-channelexec', 'arrow-1', 'arrow-2', 'arrow-3'],
+            'EXECUTING':       ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'node-multimodal', 'node-channelexec', 'arrow-1', 'arrow-2', 'arrow-3'],
+            'ANALYZING':       ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'node-multimodal', 'node-channelexec', 'node-analysis', 'arrow-1', 'arrow-2', 'arrow-3', 'arrow-4'],
+            'OPTIMIZING':      ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'node-multimodal', 'node-channelexec', 'node-analysis', 'node-optimizer', 'arrow-1', 'arrow-2', 'arrow-3', 'arrow-4', 'arrow-5'],
+            'COMPLETED':       ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'node-multimodal', 'node-channelexec', 'node-analysis', 'node-optimizer', 'arrow-1', 'arrow-2', 'arrow-3', 'arrow-4', 'arrow-5', 'arrow-loop']
+        };
+
+        const activeIds = stageProgress[status] || [];
+        
+        // If it's IDLE, clear all. Otherwise, we only add.
+        if (status === 'IDLE') {
+            document.querySelectorAll('.pipeline-node, .pipeline-arrow').forEach(el => el.classList.remove('active'));
+        }
+
+        activeIds.forEach(id => {
+            document.getElementById(id)?.classList.add('active');
+        });
     }
 
     // ── Event subscriptions → UI updates ────────────────────────
@@ -91,6 +133,7 @@ class DashboardController {
         globalEventBus.subscribe('StatusChanged', ({ payload: { old_status, new_status }, campaign_id }) => {
             this.log(i18n.t('log_campaign_status_change', { id: campaign_id, old: old_status, new: new_status }), 'info');
             this._updateCampaignBadge(new_status);
+            this._updatePipeline(new_status);
         });
 
         globalEventBus.subscribe('PlanGenerated', ({ payload: { plan } }) => {
@@ -173,48 +216,18 @@ class DashboardController {
     // ── Actions ──────────────────────────────────────────────────
 
     async _launchCampaign() {
-        this._setButtonState('btn-launch', i18n.t('btn_launching'), true);
-        this.log(i18n.t('log_campaign_cycle_started'), 'divider');
-
-        const response = await api.createCampaign({
-            goal:        '新品 X Pro 冷启动推广，Q2 GMV 达 500 万',
-            budget:      { total: 50000, currency: 'CNY', daily_cap: 5000 },
-            timeline:    { start: '2026-04-10', end: '2026-04-30' },
-            kpi:         { metric: 'ROAS', target: 3.0 },
-            constraints: { channels: ['tiktok', 'meta', 'google'], region: 'CN' },
-        });
-
-        if (!response.success) {
-            this.log(`Error: ${response.error}`, 'error');
-            this._setButtonState('btn-launch', 'Launch Campaign', false);
-            return;
-        }
-
-        this.activeCampaignId = response.data.id;
-        this.log(i18n.t('log_campaign_created', { id: this.activeCampaignId.slice(0, 8) }), 'success');
-        this._updateCampaignBadge(response.data.status);
-
-        // 订阅后端 WebSocket 推送 → 驱动 UI
-        wsBroadcaster.subscribe(this.activeCampaignId, (msg) => {
-            console.log('[WS →]', msg.type, msg.payload);
-            this._handleWsMessage(msg);
-        });
-
-        // 触发规划启动
-        const startResp = await api.startCampaign(this.activeCampaignId);
-        if (startResp.success) {
-            this._updateCampaignBadge('PLANNING');
-            this.log(i18n.t('log_pipeline_started', { id: startResp.data.job_id?.slice(0, 8) }), 'info');
-        } else {
-            this.log(`Start failed: ${startResp.error}`, 'error');
-        }
-        this._setButtonState('btn-launch', i18n.t('btn_launch'), false);
+        this.launchType = 'campaign';
+        document.getElementById('launch-modal').style.display = 'block';
+        document.getElementById('promo-goal-input').value = '新品 X Pro 冷启动推广，Q2 GMV 达 500 万';
+        document.getElementById('btn-confirm-launch').textContent = '🚀 Launch Full Pipeline';
     }
 
     async _triggerContentGen() {
-        // Now opens a modal for user input first
+        this.launchType = 'article';
+        this._updatePipeline('CONTENT_GEN');
         document.getElementById('launch-modal').style.display = 'block';
         document.getElementById('promo-goal-input').value = 'Promote my open source project https://github.com/CadanHu/data-analyse-system on Zhihu';
+        document.getElementById('btn-confirm-launch').textContent = '🚀 Start Generation';
     }
 
     _closeLaunchModal() {
@@ -250,11 +263,25 @@ class DashboardController {
                 <div class="history-meta">
                     <span>${new Date(item.created_at).toLocaleDateString()}</span>
                     <span class="status-badge status-${item.status}">${item.status}</span>
+                    <button class="history-delete-btn" title="Delete" data-id="${item.id}">✕</button>
                 </div>
             `;
-            div.onclick = () => {
+            div.querySelector('h4').onclick = () => {
                 this._closeHistoryModal();
                 this._showArticleModal(item);
+            };
+            div.querySelector('.history-delete-btn').onclick = async (e) => {
+                e.stopPropagation();
+                if (!confirm(`Delete "${item.title || 'Untitled'}"?`)) return;
+                const res = await api.deleteArticle(item.id);
+                if (res.success) {
+                    div.remove();
+                    if (historyList.children.length === 0) {
+                        historyList.innerHTML = '<div class="empty">No history found.</div>';
+                    }
+                } else {
+                    alert('Delete failed: ' + res.error);
+                }
             };
             historyList.appendChild(div);
         });
@@ -266,6 +293,8 @@ class DashboardController {
 
     async _confirmLaunchPromotion() {
         const goal = document.getElementById('promo-goal-input').value;
+        const budget = parseInt(document.getElementById('promo-budget-input')?.value || '50000');
+        const kpi = parseFloat(document.getElementById('promo-kpi-input')?.value || '3.0');
         const selectedChannels = Array.from(document.querySelectorAll('input[name="channel"]:checked')).map(cb => cb.value);
 
         if (!goal || selectedChannels.length === 0) {
@@ -274,14 +303,22 @@ class DashboardController {
         }
 
         this._closeLaunchModal();
+
+        if (this.launchType === 'article') {
+            await this._runArticleGenWorkflow(goal, selectedChannels);
+        } else {
+            await this._runFullPipelineWorkflow(goal, budget, kpi, selectedChannels);
+        }
+    }
+
+    async _runArticleGenWorkflow(goal, channels) {
         this._setButtonState('btn-gen-new', i18n.t('btn_generating'), true);
         this.log('Starting AI technical article generation...', 'info');
 
-        // Use the Python backend via the callAgent API
         const response = await api.callAgent('content_gen', {
             campaign_id:    this.activeCampaignId || 'demo',
             goal:           goal,
-            strategy:       { channel_plan: selectedChannels.map(ch => ({ channel: ch })) },
+            strategy:       { channel_plan: channels.map(ch => ({ channel: ch })) },
             kpi:            { metric: 'awareness', target: 'high' }
         });
 
@@ -293,8 +330,47 @@ class DashboardController {
         } else {
             this.log(`Content generation failed: ${response.error}`, 'error');
         }
-
         this._setButtonState('btn-gen-new', i18n.t('btn_gen_new'), false);
+    }
+
+    async _runFullPipelineWorkflow(goal, budget, kpi, channels) {
+        this._setButtonState('btn-launch', i18n.t('btn_launching'), true);
+        this.log(i18n.t('log_campaign_cycle_started'), 'divider');
+        this._updatePipeline('PLANNING');
+
+        const response = await api.createCampaign({
+            goal:        goal,
+            budget:      { total: budget, currency: 'CNY', daily_cap: Math.floor(budget / 10) },
+            timeline:    { start: new Date().toISOString().split('T')[0], end: '2026-12-31' },
+            kpi:         { metric: 'ROAS', target: kpi },
+            constraints: { channels: channels, region: 'CN' },
+        });
+
+        if (!response.success) {
+            this.log(`Error: ${response.error}`, 'error');
+            this._setButtonState('btn-launch', i18n.t('btn_launch'), false);
+            return;
+        }
+
+        this.activeCampaignId = response.data.id;
+        this.log(i18n.t('log_campaign_created', { id: this.activeCampaignId.slice(0, 8) }), 'success');
+        this._updateCampaignBadge(response.data.status);
+
+        // Subscribe to WS
+        wsBroadcaster.subscribe(this.activeCampaignId, (msg) => {
+            console.log('[WS →]', msg.type, msg.payload);
+            this._handleWsMessage(msg);
+        });
+
+        // Trigger Start
+        const startResp = await api.startCampaign(this.activeCampaignId);
+        if (startResp.success) {
+            this._updateCampaignBadge('PLANNING');
+            this.log(i18n.t('log_pipeline_started', { id: startResp.data.job_id?.slice(0, 8) }), 'info');
+        } else {
+            this.log(`Start failed: ${startResp.error}`, 'error');
+        }
+        this._setButtonState('btn-launch', i18n.t('btn_launch'), false);
     }
 
     _showArticleModal(variant) {
@@ -332,6 +408,7 @@ class DashboardController {
     }
 
     async _triggerExecution() {
+        this._updatePipeline('EXECUTING');
         this._setButtonState('btn-exec', i18n.t('btn_executing'), true);
         const agent = new ChannelExecAgent();
         await agent.run({
@@ -346,6 +423,7 @@ class DashboardController {
     }
 
     async _triggerAnalysis() {
+        this._updatePipeline('ANALYZING');
         this._setButtonState('btn-sync', i18n.t('btn_syncing'), true);
         const agent = new AnalysisAgent();
         await agent.run({ metrics: ['CTR', 'ROAS'], campaign_id: this.activeCampaignId || 'demo' });
@@ -353,6 +431,7 @@ class DashboardController {
     }
 
     async _triggerOptimizer() {
+        this._updatePipeline('OPTIMIZING');
         this._setButtonState('btn-optimize', i18n.t('btn_optimizing'), true);
         const analysisAgent = new AnalysisAgent();
         const report = await analysisAgent.run({ metrics: ['CTR', 'ROAS'], campaign_id: this.activeCampaignId || 'demo' });
@@ -369,36 +448,44 @@ class DashboardController {
             case 'campaign.status_changed':
                 this.log(i18n.t('log_campaign_status_change', { id: campaign_id?.slice(0,8), old: payload.old_status, new: payload.new_status }), 'info');
                 this._updateCampaignBadge(payload.new_status);
+                this._updatePipeline(payload.new_status);
                 break;
             case 'campaign.plan_ready':
                 this.log(i18n.t('log_planner_dag', { n: payload.plan?.tasks?.length ?? '?', s: payload.plan?.scenario }), 'info');
                 this._updateStat('gen-count', `${payload.plan?.tasks?.length ?? '?'} Tasks`);
+                this._updatePipeline('PLANNING');
                 break;
             case 'task.content_generated':
                 this.log(i18n.t('log_content_gen', { n: payload.bundle?.variants?.length ?? 0 }), 'success');
                 this._updateStat('gen-count', `${payload.bundle?.variants?.length ?? 0} Variants`);
+                this._updatePipeline('CONTENT_GEN');
                 break;
             case 'task.assets_generated':
                 this.log(i18n.t('log_assets_gen', { n: payload.asset_ids?.length ?? 0, type: payload.type }), 'success');
+                this._updatePipeline('MULTIMODAL');
                 break;
             case 'task.strategy_decided':
                 this.log(i18n.t('log_strategy_decided', { channels: payload.strategy?.channel_plan?.map(c => c.channel).join(', ') }), 'info');
+                this._updatePipeline('STRATEGY');
                 break;
             case 'task.ad_deployed':
                 const platforms = payload.platforms?.join(', ');
                 this.log(i18n.t('log_ads_deployed', { platforms }), 'success');
                 this._addFeedItem(i18n.t('log_deployed_to', { platforms: payload.platforms?.join(' & ') }));
                 this._updateStat('exec-reach', '87.4%');
+                this._updatePipeline('DEPLOYED');
                 break;
             case 'metrics.updated':
                 this.log(i18n.t('log_analytics_report', { roas: payload.metrics?.roas?.toFixed(2), ctr: ((payload.metrics?.ctr ?? 0) * 100).toFixed(2) }), 'info');
                 this._updateStat('roi-value', `+${((payload.metrics?.roas - 1) * 100)?.toFixed(1)}%`);
                 this._animateChartBars(payload.metrics?.roas);
+                this._updatePipeline('ANALYZING');
                 break;
             case 'optimization.applied':
                 const types = payload.actions?.map(a => a.type).join(', ') || 'NONE';
                 this.log(i18n.t('log_optimizer_fired', { types }), 'warning');
                 this._updateOptStatus(i18n.t('log_opt_status', { loop: payload.loop_count, types }));
+                this._updatePipeline('OPTIMIZING');
                 break;
             case 'anomaly.detected':
                 this.log(i18n.t('log_anomaly_detected', { metric: payload.metric, channel: payload.channel, severity: payload.severity }), 'error');

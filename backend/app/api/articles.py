@@ -1,8 +1,8 @@
 from typing import List, Optional
 from uuid import UUID
 import structlog
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select, desc
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select, desc, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.content import Copy
@@ -42,3 +42,14 @@ async def list_articles(
             for item in items
         ]
     }
+
+
+@router.delete("/{article_id}", summary="Delete an article by ID")
+async def delete_article(article_id: UUID, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Copy).where(Copy.id == article_id))
+    item = result.scalar_one_or_none()
+    if item is None:
+        raise HTTPException(status_code=404, detail="Article not found")
+    await db.execute(delete(Copy).where(Copy.id == article_id))
+    await db.commit()
+    return {"deleted": str(article_id)}

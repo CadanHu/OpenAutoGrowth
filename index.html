@@ -20,7 +20,7 @@
                 <span class="logo-text">OpenAutoGrowth</span>
             </div>
             <div class="nav-center">
-                <span class="system-version" data-i18n="nav_version">Multi-Agent · Closed-Loop · v2.0</span>
+                <span class="system-version" data-i18n="nav_version">Multi-Agent · Closed-Loop · v0.0.1</span>
             </div>
             <div class="nav-right">
                 <div class="lang-switcher">
@@ -159,44 +159,44 @@
             <section class="pipeline-section">
                 <h3 data-i18n="pipeline_header">Agent Pipeline</h3>
                 <div class="pipeline">
-                    <div class="pipeline-node">
+                    <div class="pipeline-node" id="node-orchestrator">
                         <span class="p-icon">🧠</span>
                         <span class="p-label">Orchestrator</span>
                     </div>
-                    <div class="pipeline-arrow">→</div>
-                    <div class="pipeline-node">
+                    <div class="pipeline-arrow" id="arrow-1">→</div>
+                    <div class="pipeline-node" id="node-planner">
                         <span class="p-icon">🗺️</span>
                         <span class="p-label">Planner</span>
                     </div>
-                    <div class="pipeline-arrow">→</div>
-                    <div class="pipeline-node parallel">
-                        <span class="p-icon">📝</span>
-                        <span class="p-label">ContentGen</span>
-                    </div>
-                    <div class="pipeline-node parallel">
-                        <span class="p-icon">🎨</span>
-                        <span class="p-label">Multimodal</span>
-                    </div>
-                    <div class="pipeline-node parallel">
+                    <div class="pipeline-arrow" id="arrow-2">→</div>
+                    <div class="pipeline-node parallel" id="node-strategy">
                         <span class="p-icon">🎯</span>
                         <span class="p-label">Strategy</span>
                     </div>
-                    <div class="pipeline-arrow">→</div>
-                    <div class="pipeline-node">
+                    <div class="pipeline-node parallel" id="node-contentgen">
+                        <span class="p-icon">📝</span>
+                        <span class="p-label">ContentGen</span>
+                    </div>
+                    <div class="pipeline-node parallel" id="node-multimodal">
+                        <span class="p-icon">🎨</span>
+                        <span class="p-label">Multimodal</span>
+                    </div>
+                    <div class="pipeline-arrow" id="arrow-3">→</div>
+                    <div class="pipeline-node" id="node-channelexec">
                         <span class="p-icon">📡</span>
                         <span class="p-label">ChannelExec</span>
                     </div>
-                    <div class="pipeline-arrow">→</div>
-                    <div class="pipeline-node">
+                    <div class="pipeline-arrow" id="arrow-4">→</div>
+                    <div class="pipeline-node" id="node-analysis">
                         <span class="p-icon">📊</span>
                         <span class="p-label">Analysis</span>
                     </div>
-                    <div class="pipeline-arrow">→</div>
-                    <div class="pipeline-node">
+                    <div class="pipeline-arrow" id="arrow-5">→</div>
+                    <div class="pipeline-node" id="node-optimizer">
                         <span class="p-icon">⚙️</span>
                         <span class="p-label">Optimizer</span>
                     </div>
-                    <div class="pipeline-arrow loop-back">↩ Loop</div>
+                    <div class="pipeline-arrow loop-back" id="arrow-loop">↩ Loop</div>
                 </div>
             </section>
         </main>
@@ -233,15 +233,26 @@
             </div>
             <div class="modal-body">
                 <div class="input-group">
-                    <label data-i18n="label_promo_goal">Promotion Goal (including GitHub URL)</label>
-                    <textarea id="promo-goal-input" class="modal-textarea" style="min-height: 100px;" placeholder="e.g., Promote my project https://github.com/CadanHu/data-analyse-system on Zhihu"></textarea>
+                    <label data-i18n="label_promo_goal">Promotion Goal (including GitHub URL if applicable)</label>
+                    <textarea id="promo-goal-input" class="modal-textarea" style="min-height: 80px;" placeholder="e.g., Promote my project https://github.com/CadanHu/data-analyse-system on Zhihu"></textarea>
+                </div>
+                <div class="input-row" style="display: flex; gap: 1rem;">
+                    <div class="input-group" style="flex: 1;">
+                        <label data-i18n="label_promo_budget">Total Budget (CNY)</label>
+                        <input type="number" id="promo-budget-input" class="modal-input" value="50000">
+                    </div>
+                    <div class="input-group" style="flex: 1;">
+                        <label data-i18n="label_promo_kpi">Target ROAS</label>
+                        <input type="number" id="promo-kpi-input" class="modal-input" value="3.0" step="0.1">
+                    </div>
                 </div>
                 <div class="input-group">
                     <label data-i18n="label_promo_channels">Target Channels</label>
                     <div class="checkbox-group">
                         <label><input type="checkbox" name="channel" value="zhihu" checked> Zhihu</label>
-                        <label><input type="checkbox" name="channel" value="juejin"> Juejin</label>
-                        <label><input type="checkbox" name="channel" value="csdn"> CSDN</label>
+                        <label><input type="checkbox" name="channel" value="tiktok" checked> TikTok</label>
+                        <label><input type="checkbox" name="channel" value="meta" checked> Meta</label>
+                        <label><input type="checkbox" name="channel" value="google" checked> Google</label>
                     </div>
                 </div>
             </div>

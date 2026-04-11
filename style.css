@@ -414,32 +414,49 @@ html[lang="en"] #btn-lang-en {
     flex-direction: column;
     align-items: center;
     gap: 0.25rem;
-    background: rgba(99,102,241,0.1);
-    border: 1px solid rgba(99,102,241,0.25);
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 10px;
     padding: 0.5rem 0.75rem;
     min-width: 80px;
-    transition: var(--transition);
+    transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    opacity: 0.5;
+    filter: grayscale(1);
 }
 
-.pipeline-node:hover {
-    background: rgba(99,102,241,0.2);
-    border-color: rgba(99,102,241,0.5);
-    transform: translateY(-2px);
+.pipeline-node.active {
+    background: rgba(99, 102, 241, 0.15);
+    border-color: rgba(99, 102, 241, 0.5);
+    opacity: 1;
+    filter: grayscale(0);
+    transform: translateY(-4px);
+    box-shadow: 0 10px 20px rgba(99, 102, 241, 0.2);
 }
 
-.pipeline-node.parallel {
-    background: rgba(16,185,129,0.08);
-    border-color: rgba(16,185,129,0.25);
+.pipeline-node.active.parallel {
+    background: rgba(16, 185, 129, 0.15);
+    border-color: rgba(16, 185, 129, 0.5);
+    box-shadow: 0 10px 20px rgba(16, 185, 129, 0.2);
 }
-
-.p-icon { font-size: 1.2rem; }
-.p-label { font-size: 0.7rem; color: var(--text-secondary); text-align: center; white-space: nowrap; }
 
 .pipeline-arrow {
     color: var(--text-secondary);
     font-size: 1.2rem;
     flex-shrink: 0;
+    transition: all 0.3s;
+    opacity: 0.3;
+}
+
+.pipeline-arrow.active {
+    color: var(--text-primary);
+    opacity: 1;
+    animation: arrow-pulse 1.5s infinite;
+}
+
+@keyframes arrow-pulse {
+    0% { transform: translateX(0); opacity: 0.5; }
+    50% { transform: translateX(5px); opacity: 1; text-shadow: 0 0 8px white; }
+    100% { transform: translateX(0); opacity: 0.5; }
 }
 
 .pipeline-arrow.loop-back {
@@ -561,6 +578,29 @@ html[lang="en"] #btn-lang-en {
     color: var(--text-secondary);
     display: flex;
     justify-content: space-between;
+    align-items: center;
+}
+
+.history-delete-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 0.75rem;
+    padding: 2px 5px;
+    border-radius: 4px;
+    opacity: 0;
+    transition: var(--transition);
+    line-height: 1;
+}
+
+.history-item:hover .history-delete-btn {
+    opacity: 1;
+}
+
+.history-delete-btn:hover {
+    color: #f87171;
+    background: rgba(248, 113, 113, 0.15);
 }
 
 .status-badge {

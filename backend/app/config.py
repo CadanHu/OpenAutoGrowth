@@ -72,6 +72,7 @@ class Settings(BaseSettings):
 
     # ── Zhihu ──────────────────────────────────────────────────────
     zhihu_cookie: str = Field(default="", alias="ZHIHU_COOKIE")
+    zhihu_zst_81: str = Field(default="", alias="ZHIHU_ZST_81")
 
     # ── Image Generation ───────────────────────────────────────────
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")

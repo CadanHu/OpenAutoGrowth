@@ -66,6 +66,10 @@ export class CampaignAPI {
         return this._request('GET', `/articles?limit=${limit}&offset=${offset}`);
     }
 
+    async deleteArticle(id) {
+        return this._request('DELETE', `/articles/${id}`);
+    }
+
     // ── A2A Agents ────────────────────────────────────────────────────────
 
     /**
@@ -89,7 +93,7 @@ export class CampaignAPI {
     }
 
     async _pollTask(agentName, taskId, retry = 0) {
-        // NOTE: Increase timeout to 300 seconds (150 * 2s) to match ARQ limit
+        // Timeout: 150 * 2s = 300 seconds
         if (retry > 150) return { success: false, error: 'Polling timeout' };
 
         await new Promise(r => setTimeout(r, 2000));

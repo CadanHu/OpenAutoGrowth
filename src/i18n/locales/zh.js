@@ -1,6 +1,6 @@
 export default {
   "app_title": "OpenAutoGrowth | AI 增长闭环引擎",
-  "nav_version": "多智能体 · 闭环 · v2.0",
+  "nav_version": "多智能体 · 闭环 · v0.0.1",
   "nav_no_campaign": "无活动",
   "status_no campaign": "无活动",
   "status_planning": "规划中",
