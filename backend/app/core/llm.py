@@ -96,7 +96,7 @@ class LLMClient:
         return result
 
     async def _openai_compatible_completion(self, base_url, api_key, messages, system, model, max_tokens):
-        # NOTE: 180s timeout is intentional — article generation takes ~90s.
+        # NOTE: Timeout must be 180s for long technical articles
         async with httpx.AsyncClient(timeout=180.0) as client:
             full_messages = []
             if system:
