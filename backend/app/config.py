@@ -70,6 +70,10 @@ class Settings(BaseSettings):
     google_ads_client_secret: str = Field(default="", alias="GOOGLE_ADS_CLIENT_SECRET")
     google_ads_refresh_token: str = Field(default="", alias="GOOGLE_ADS_REFRESH_TOKEN")
 
+    # ── Zhihu ──────────────────────────────────────────────────────
+    zhihu_cookie: str = Field(default="", alias="ZHIHU_COOKIE")
+    zhihu_zst_81: str = Field(default="", alias="ZHIHU_ZST_81")
+
     # ── Image Generation ───────────────────────────────────────────
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
     stability_api_key: str = Field(default="", alias="STABILITY_API_KEY")
