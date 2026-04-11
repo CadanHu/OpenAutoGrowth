@@ -40,39 +40,39 @@ def build_campaign_graph(checkpointer=None):
     graph = StateGraph(CampaignState)
 
     # ── Register nodes ────────────────────────────────────────────
-    graph.add_node("planner",      planner_node)
-    graph.add_node("strategy",     strategy_node)
-    graph.add_node("content_gen",  content_gen_node)
-    graph.add_node("multimodal",   multimodal_node)
-    graph.add_node("channel_exec", channel_exec_node)
-    graph.add_node("analysis",     analysis_node)
-    graph.add_node("optimizer",    optimizer_node)
+    graph.add_node("planner_node",      planner_node)
+    graph.add_node("strategy_node",     strategy_node)
+    graph.add_node("content_gen_node",  content_gen_node)
+    graph.add_node("multimodal_node",   multimodal_node)
+    graph.add_node("channel_exec_node", channel_exec_node)
+    graph.add_node("analysis_node",     analysis_node)
+    graph.add_node("optimizer_node",    optimizer_node)
 
     # ── Entry point ───────────────────────────────────────────────
-    graph.set_entry_point("planner")
+    graph.set_entry_point("planner_node")
 
     # ── Sequential edges ──────────────────────────────────────────
-    graph.add_edge("planner", "strategy")
+    graph.add_edge("planner_node", "strategy_node")
 
     # ── Parallel fan-out: strategy → content_gen AND multimodal ──
     # LangGraph executes both nodes concurrently when both are listed as targets
-    graph.add_edge("strategy", "content_gen")
-    graph.add_edge("strategy", "multimodal")
+    graph.add_edge("strategy_node", "content_gen_node")
+    graph.add_edge("strategy_node", "multimodal_node")
 
     # ── Fan-in: both content_gen and multimodal must finish before channel_exec
-    graph.add_edge("content_gen", "channel_exec")
-    graph.add_edge("multimodal",  "channel_exec")
+    graph.add_edge("content_gen_node", "channel_exec_node")
+    graph.add_edge("multimodal_node",  "channel_exec_node")
 
     # ── Continue pipeline ─────────────────────────────────────────
-    graph.add_edge("channel_exec", "analysis")
-    graph.add_edge("analysis",     "optimizer")
+    graph.add_edge("channel_exec_node", "analysis_node")
+    graph.add_edge("analysis_node",     "optimizer_node")
 
     # ── Conditional loop edge ─────────────────────────────────────
     graph.add_conditional_edges(
-        "optimizer",
+        "optimizer_node",
         should_loop,
         {
-            "loop": "strategy",   # loop back for optimization
+            "loop": "strategy_node",   # loop back for optimization
             "done": END,
         },
     )

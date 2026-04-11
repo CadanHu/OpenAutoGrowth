@@ -10,8 +10,23 @@ from arq import create_pool
 from arq.connections import RedisSettings
 
 from app.config import settings
+from app.core.event_bus import event_bus
 
 logger = structlog.get_logger(__name__)
+
+
+# ── Lifecycle Hooks ──────────────────────────────────────────────────────────
+
+async def startup(ctx: dict):
+    """Initialize resources for the worker process."""
+    await event_bus.connect()
+    logger.info("worker_startup_complete")
+
+
+async def shutdown(ctx: dict):
+    """Cleanup resources."""
+    await event_bus.disconnect()
+    logger.info("worker_shutdown_complete")
 
 
 # ── Task Functions (executed by ARQ worker) ───────────────────────────────────
@@ -21,6 +36,10 @@ async def run_campaign_pipeline(ctx: dict, campaign_id: str):
     Full campaign pipeline: PLANNING → DEPLOYED → MONITORING → OPTIMIZING.
     Invokes the LangGraph StateGraph with PostgreSQL checkpointer.
     """
+    # Robustness: ensure event_bus is connected in this worker process
+    if not event_bus._redis:
+        await event_bus.connect()
+
     logger.info("campaign_pipeline_start", campaign_id=campaign_id)
 
     from app.database import get_checkpointer, async_session_factory
@@ -50,7 +69,14 @@ async def run_campaign_pipeline(ctx: dict, campaign_id: str):
         config = {"configurable": {"thread_id": campaign_id}}
         result = await graph.ainvoke(initial_state, config=config)
 
-    logger.info("campaign_pipeline_done", campaign_id=campaign_id, status=result.get("status"))
+    # Final status update to trigger frontend 'COMPLETED' (loop-back) visual
+    final_status = result.get("status", "COMPLETED")
+    if final_status == "OPTIMIZING":
+         # In the logic, OPTIMIZING means we finished a loop and KPI was met
+         # Let's broadcast COMPLETED to trigger the UI loop-back animation
+         await event_bus.publish("StatusChanged", {"old_status": "OPTIMIZING", "new_status": "COMPLETED"}, campaign_id)
+
+    logger.info("campaign_pipeline_done", campaign_id=campaign_id, status=final_status)
     return result
 
 
@@ -142,6 +168,8 @@ async def cancel_job(task_id: str) -> bool:
 
 class WorkerSettings:
     functions = [run_campaign_pipeline, run_agent_node]
+    on_startup = startup
+    on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(settings.arq_redis_url)
     max_jobs = settings.arq_max_jobs
     job_timeout = settings.arq_job_timeout

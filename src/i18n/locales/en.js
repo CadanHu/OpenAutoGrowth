@@ -1,6 +1,6 @@
 export default {
   "app_title": "OpenAutoGrowth | AI Growth Closed-Loop Engine",
-  "nav_version": "Multi-Agent · Closed-Loop · v2.0",
+  "nav_version": "Multi-Agent · Closed-Loop · v0.0.1",
   "nav_no_campaign": "NO CAMPAIGN",
   "status_no campaign": "NO CAMPAIGN",
   "status_planning": "PLANNING",

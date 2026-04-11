@@ -60,6 +60,67 @@ export class CampaignAPI {
         return this._request('GET', `/campaigns/${id}/events`);
     }
 
+    // ── Articles ──────────────────────────────────────────────────────────
+
+    async listArticles(limit = 20, offset = 0) {
+        return this._request('GET', `/articles?limit=${limit}&offset=${offset}`);
+    }
+
+    async deleteArticle(id) {
+        return this._request('DELETE', `/articles/${id}`);
+    }
+
+    // ── A2A Agents ────────────────────────────────────────────────────────
+
+    /**
+     * Call a backend agent directly (A2A style)
+     */
+    async callAgent(agentName, input) {
+        const taskId = `task_${Math.random().toString(36).slice(2, 10)}`;
+        const payload = {
+            id: taskId,
+            message: {
+                role: 'user',
+                parts: [{ type: 'text', text: JSON.stringify(input) }]
+            }
+        };
+
+        const submitResp = await this._request('POST', `/agents/${agentName}/tasks/send`, payload);
+        if (!submitResp.success) return submitResp;
+
+        // Simple polling for result
+        return this._pollTask(agentName, taskId);
+    }
+
+    async _pollTask(agentName, taskId, retry = 0) {
+        // Timeout: 150 * 2s = 300 seconds
+        if (retry > 150) return { success: false, error: 'Polling timeout' };
+
+        await new Promise(r => setTimeout(r, 2000));
+        const resp = await this._request('GET', `/agents/${agentName}/tasks/${taskId}`);
+
+        if (!resp.success) return resp;
+
+        const state = resp.data.status?.state;
+        if (state === 'completed') {
+            const artifact = resp.data.artifacts?.find(a => a.name === 'result');
+            const text = artifact?.parts?.find(p => p.type === 'text')?.text;
+            const data = text ? JSON.parse(text) : {};
+
+            // Handle internal agent errors
+            if (data.errors && data.errors.length > 0) {
+                return { success: false, error: data.errors[0].error || 'Agent execution failed' };
+            }
+
+            return { success: true, data: data };
+        } else if (state === 'failed' || state === 'canceled') {
+            const error = resp.data.metadata?.error || `Task ${state}`;
+            return { success: false, error: error };
+        }
+
+        return this._pollTask(agentName, taskId, retry + 1);
+    }
+
     // ── Internal fetch helper ─────────────────────────────────────────────
 
     async _request(method, path, body = null) {
