@@ -647,3 +647,121 @@ html[lang="en"] #btn-lang-en {
     .pipeline  { gap: 0.3rem; }
     .pipeline-node { min-width: 60px; padding: 0.4rem; }
 }
+
+/* Reviewer Node Styling */
+#node-reviewer.active {
+    border-color: #3b82f6;
+    box-shadow: 0 0 15px rgba(59, 130, 246, 0.4);
+    background: rgba(59, 130, 246, 0.1);
+    animation: reviewer-pulse 2s infinite;
+}
+
+@keyframes reviewer-pulse {
+    0% { box-shadow: 0 0 5px rgba(59, 130, 246, 0.4); }
+    50% { box-shadow: 0 0 20px rgba(59, 130, 246, 0.6); }
+    100% { box-shadow: 0 0 5px rgba(59, 130, 246, 0.4); }
+}
+
+/* Channel Grid & Cards */
+.channel-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.8rem;
+    margin-top: 0.5rem;
+}
+
+.channel-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 0.8rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background: #f8fafc;
+}
+
+.channel-card:hover {
+    border-color: #6366f1;
+    background: #f1f5f9;
+}
+
+.channel-card.active {
+    border-color: #6366f1;
+    background: rgba(99, 102, 241, 0.1);
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+}
+
+.channel-icon {
+    font-size: 1.5rem;
+    margin-bottom: 0.4rem;
+}
+
+.channel-name {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #475569;
+}
+
+.channel-card.active .channel-name {
+    color: #6366f1;
+}
+
+/* Modal Enhancements */
+.modal-input:focus, .modal-textarea:focus {
+    border-color: #6366f1;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+select.modal-input {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2364748b'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 1rem;
+    padding-right: 2rem;
+}
+
+/* Campaign Type Tabs */
+.campaign-type-tabs {
+    display: flex;
+    background: #f1f5f9;
+    padding: 4px;
+    border-radius: 12px;
+    margin-bottom: 1.5rem;
+    gap: 4px;
+}
+
+.tab-btn {
+    flex: 1;
+    border: none;
+    background: transparent;
+    padding: 0.6rem;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #64748b;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+.tab-btn:hover {
+    color: #475569;
+}
+
+.tab-btn.active {
+    background: white;
+    color: #6366f1;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+#location-group {
+    transition: all 0.3s ease;
+}

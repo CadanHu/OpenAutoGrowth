@@ -203,7 +203,7 @@ async def content_gen_node(state: CampaignState) -> dict:
         bundle_data = {
             "bundle_id": str(bundle_id),
             "variants": variants,
-            "llm_model": settings.anthropic_model,
+            "llm_model": settings.gemini_model,
         }
 
         # ── Persistence Layer ─────────────────────────────────────────────
@@ -221,7 +221,7 @@ async def content_gen_node(state: CampaignState) -> dict:
                 new_bundle = ContentBundle(
                     id=bundle_id,
                     campaign_id=camp_uuid,
-                    llm_model=settings.anthropic_model,
+                    llm_model=settings.gemini_model,
                     generation_params={"tone": state.get("tone", "professional")},
                 )
                 db.add(new_bundle)

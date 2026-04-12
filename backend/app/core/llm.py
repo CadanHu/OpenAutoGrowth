@@ -23,18 +23,18 @@ class LLMClient:
         model: Optional[str] = None,
         max_tokens: Optional[int] = None
     ) -> str:
-        # Determine provider
+        # Determine provider: Prioritize Gemini
         if not provider:
-            if settings.anthropic_api_key:
-                provider = "anthropic"
+            if settings.gemini_api_key:
+                provider = "gemini"
             elif settings.deepseek_api_key:
                 provider = "deepseek"
             elif settings.qwen_api_key:
                 provider = "qwen"
-            elif settings.gemini_api_key:
-                provider = "gemini"
             elif settings.zhipu_api_key:
                 provider = "zhipu"
+            elif settings.anthropic_api_key:
+                provider = "anthropic"
             else:
                 raise ValueError("No LLM provider configured")
 
@@ -68,10 +68,11 @@ class LLMClient:
                 max_tokens
             )
         elif provider == "gemini":
-            # Gemini OpenAI-compatible endpoint requires the key in the URL
+            # Gemini OpenAI-compatible endpoint
+            # Note: Using v1beta for early access models like 2.5/3.1
             return await self._openai_compatible_completion(
-                f"https://generativelanguage.googleapis.com/v1beta/openai?key={settings.gemini_api_key}",
-                None, # No bearer token needed when key is in URL
+                "https://generativelanguage.googleapis.com/v1beta/openai",
+                settings.gemini_api_key,
                 messages,
                 system,
                 model or settings.gemini_model,

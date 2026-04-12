@@ -102,11 +102,12 @@ class DashboardController {
             'STRATEGY':        ['node-orchestrator', 'node-planner', 'node-strategy', 'arrow-1', 'arrow-2'],
             'CONTENT_GEN':     ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'arrow-1', 'arrow-2'],
             'MULTIMODAL':      ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'node-multimodal', 'arrow-1', 'arrow-2'],
-            'DEPLOYED':        ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'node-multimodal', 'node-channelexec', 'arrow-1', 'arrow-2', 'arrow-3'],
-            'EXECUTING':       ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'node-multimodal', 'node-channelexec', 'arrow-1', 'arrow-2', 'arrow-3'],
-            'ANALYZING':       ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'node-multimodal', 'node-channelexec', 'node-analysis', 'arrow-1', 'arrow-2', 'arrow-3', 'arrow-4'],
-            'OPTIMIZING':      ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'node-multimodal', 'node-channelexec', 'node-analysis', 'node-optimizer', 'arrow-1', 'arrow-2', 'arrow-3', 'arrow-4', 'arrow-5'],
-            'COMPLETED':       ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'node-multimodal', 'node-channelexec', 'node-analysis', 'node-optimizer', 'arrow-1', 'arrow-2', 'arrow-3', 'arrow-4', 'arrow-5', 'arrow-loop']
+            'REVIEWING':       ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'node-multimodal', 'node-reviewer', 'arrow-1', 'arrow-2', 'arrow-3'],
+            'DEPLOYED':        ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'node-multimodal', 'node-reviewer', 'node-channelexec', 'arrow-1', 'arrow-2', 'arrow-3', 'arrow-4'],
+            'EXECUTING':       ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'node-multimodal', 'node-reviewer', 'node-channelexec', 'arrow-1', 'arrow-2', 'arrow-3', 'arrow-4'],
+            'ANALYZING':       ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'node-multimodal', 'node-reviewer', 'node-channelexec', 'node-analysis', 'arrow-1', 'arrow-2', 'arrow-3', 'arrow-4', 'arrow-5'],
+            'OPTIMIZING':      ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'node-multimodal', 'node-reviewer', 'node-channelexec', 'node-analysis', 'node-optimizer', 'arrow-1', 'arrow-2', 'arrow-3', 'arrow-4', 'arrow-5', 'arrow-6'],
+            'COMPLETED':       ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'node-multimodal', 'node-reviewer', 'node-channelexec', 'node-analysis', 'node-optimizer', 'arrow-1', 'arrow-2', 'arrow-3', 'arrow-4', 'arrow-5', 'arrow-6', 'arrow-loop']
         };
 
         const activeIds = stageProgress[status] || [];
@@ -119,6 +120,54 @@ class DashboardController {
         activeIds.forEach(id => {
             document.getElementById(id)?.classList.add('active');
         });
+    }
+
+    _updateDynamicForm(type) {
+        const urlLabel = document.getElementById('label-url');
+        const urlInput = document.getElementById('promo-url-input');
+        const locationGroup = document.getElementById('location-group');
+        const objectiveSelect = document.getElementById('promo-objective-select');
+        
+        const configs = {
+            'ecom': {
+                label: 'Product URL (Amazon/Shopify)',
+                placeholder: 'https://amazon.com/dp/B0CX123...',
+                showLocation: true,
+                defaultObjective: 'conversion'
+            },
+            'software': {
+                label: 'Project/Repo URL (GitHub/AppStore)',
+                placeholder: 'https://github.com/user/repo',
+                showLocation: false,
+                defaultObjective: 'growth'
+            },
+            'lead': {
+                label: 'Landing Page URL',
+                placeholder: 'https://your-business.com/demo',
+                showLocation: true,
+                defaultObjective: 'traffic'
+            }
+        };
+
+        const config = configs[type];
+        urlLabel.textContent = config.label;
+        urlInput.placeholder = config.placeholder;
+        locationGroup.style.display = config.showLocation ? 'block' : 'none';
+        objectiveSelect.value = config.defaultObjective;
+        this._updateKpiUnit(config.defaultObjective);
+    }
+
+    _updateKpiUnit(objective) {
+        const unitEl = document.getElementById('kpi-unit');
+        const kpiInput = document.getElementById('promo-kpi-input');
+        const units = {
+            'growth':     'CPA (Star)',
+            'awareness':  'CPM',
+            'conversion': 'ROAS',
+            'traffic':    'CPC'
+        };
+        unitEl.textContent = units[objective] || 'Target';
+        kpiInput.value = (objective === 'conversion') ? '3.0' : '1.0';
     }
 
     // ── Event subscriptions → UI updates ────────────────────────
@@ -186,6 +235,27 @@ class DashboardController {
     _bindButtons() {
         // Main launch button
         document.getElementById('btn-launch')?.addEventListener('click', () => this._launchCampaign());
+
+        // Campaign Type Tabs logic
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                this._updateDynamicForm(btn.dataset.type);
+            });
+        });
+
+        // Channel card selection
+        document.querySelectorAll('.channel-card').forEach(card => {
+            card.addEventListener('click', () => {
+                card.classList.toggle('active');
+            });
+        });
+
+        // Objective change -> update KPI unit
+        document.getElementById('promo-objective-select')?.addEventListener('change', (e) => {
+            this._updateKpiUnit(e.target.value);
+        });
 
         // Card action buttons
         document.getElementById('btn-gen-new')?.addEventListener('click',   () => this._triggerContentGen());
@@ -292,23 +362,58 @@ class DashboardController {
     }
 
     async _confirmLaunchPromotion() {
-        const goal = document.getElementById('promo-goal-input').value;
-        const budget = parseInt(document.getElementById('promo-budget-input')?.value || '50000');
-        const kpi = parseFloat(document.getElementById('promo-kpi-input')?.value || '3.0');
-        const selectedChannels = Array.from(document.querySelectorAll('input[name="channel"]:checked')).map(cb => cb.value);
+        const type      = document.querySelector('.tab-btn.active').dataset.type;
+        const url       = document.getElementById('promo-url-input').value.trim();
+        const desc      = document.getElementById('promo-desc-input').value.trim();
+        const objective = document.getElementById('promo-objective-select').value;
+        const budget    = parseInt(document.getElementById('promo-budget-input')?.value || '10000');
+        const kpi       = parseFloat(document.getElementById('promo-kpi-input')?.value || '1.0');
+        const duration  = parseInt(document.getElementById('promo-duration-input')?.value || '7');
+        const location  = document.getElementById('promo-location-select').value;
+        const channels  = Array.from(document.querySelectorAll('.channel-card.active')).map(c => c.dataset.channel);
 
-        if (!goal || selectedChannels.length === 0) {
-            alert('Please provide a goal and at least one channel.');
+        // --- VALIDATION ---
+        if (!url || !url.startsWith('http')) {
+            alert('Please enter a valid URL.');
             return;
         }
 
         this._closeLaunchModal();
+        this._setButtonState('btn-launch', 'Launching...', true);
+        this._updatePipeline('PLANNING');
 
-        if (this.launchType === 'article') {
-            await this._runArticleGenWorkflow(goal, selectedChannels);
-        } else {
-            await this._runFullPipelineWorkflow(goal, budget, kpi, selectedChannels);
+        const campaignGoal = `[Type: ${type.toUpperCase()}] Objective: ${objective}. Desc: ${desc}. URL: ${url}. Region: ${location}.`;
+
+        const response = await api.createCampaign({
+            goal:        campaignGoal,
+            campaign_type: type,
+            budget:      { total: budget, currency: 'CNY', duration_days: duration },
+            timeline:    { 
+                start: new Date().toISOString().split('T')[0], 
+                end:   new Date(Date.now() + duration * 86400000).toISOString().split('T')[0] 
+            },
+            kpi:         { metric: objective, target: kpi },
+            constraints: { channels: channels, region: location, url: url },
+        });
+
+        if (!response.success) {
+            this.log(`Error: ${response.error}`, 'error');
+            this._setButtonState('btn-launch', i18n.t('btn_launch'), false);
+            return;
         }
+
+        this.activeCampaignId = response.data.id;
+        this.log(i18n.t('log_campaign_created', { id: this.activeCampaignId.slice(0, 8) }), 'success');
+        this._updateCampaignBadge(response.data.status);
+
+        // Trigger Start
+        const startResp = await api.startCampaign(this.activeCampaignId);
+        if (startResp.success) {
+            this._updateCampaignBadge('PLANNING');
+        } else {
+            this.log(`Start failed: ${startResp.error}`, 'error');
+        }
+        this._setButtonState('btn-launch', i18n.t('btn_launch'), false);
     }
 
     async _runArticleGenWorkflow(goal, channels) {

@@ -34,6 +34,10 @@ class CampaignState(TypedDict):
     anomalies:     Optional[list[dict]]
     opt_actions:   Optional[list[dict]]      # RuleEngine decisions
 
+    # ── Reviewer layer ─────────────────────────────────────────────
+    review_result:   Optional[str]           # APPROVED | REJECTED
+    review_feedback: Optional[str]           # Feedback if REJECTED
+
     # ── Control flow ───────────────────────────────────────────────
     status:        str                       # current campaign status
     loop_count:    int                       # optimization loop counter

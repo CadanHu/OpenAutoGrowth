@@ -13,9 +13,17 @@ from .planner import planner_node
 from .strategy import strategy_node
 from .content_gen import content_gen_node
 from .multimodal import multimodal_node
+from .reviewer import reviewer_node
 from .channel_exec import channel_exec_node
 from .analysis import analysis_node
 from .optimizer import optimizer_node, should_loop
+
+
+def should_publish(state: CampaignState) -> str:
+    """Conditional edge: pass to execution if approved, else loop back to strategy."""
+    if state.get("review_result") == "APPROVED":
+        return "publish"
+    return "revise"
 
 
 def build_campaign_graph(checkpointer=None):
@@ -44,6 +52,7 @@ def build_campaign_graph(checkpointer=None):
     graph.add_node("strategy_node",     strategy_node)
     graph.add_node("content_gen_node",  content_gen_node)
     graph.add_node("multimodal_node",   multimodal_node)
+    graph.add_node("reviewer_node",     reviewer_node)
     graph.add_node("channel_exec_node", channel_exec_node)
     graph.add_node("analysis_node",     analysis_node)
     graph.add_node("optimizer_node",    optimizer_node)
@@ -59,9 +68,19 @@ def build_campaign_graph(checkpointer=None):
     graph.add_edge("strategy_node", "content_gen_node")
     graph.add_edge("strategy_node", "multimodal_node")
 
-    # ── Fan-in: both content_gen and multimodal must finish before channel_exec
-    graph.add_edge("content_gen_node", "channel_exec_node")
-    graph.add_edge("multimodal_node",  "channel_exec_node")
+    # ── Fan-in: both content_gen and multimodal must finish before review
+    graph.add_edge("content_gen_node", "reviewer_node")
+    graph.add_edge("multimodal_node",  "reviewer_node")
+
+    # ── Conditional review edge ──
+    graph.add_conditional_edges(
+        "reviewer_node",
+        should_publish,
+        {
+            "publish": "channel_exec_node",
+            "revise":  "strategy_node",    # loop back to fix errors
+        },
+    )
 
     # ── Continue pipeline ─────────────────────────────────────────
     graph.add_edge("channel_exec_node", "analysis_node")

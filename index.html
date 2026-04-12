@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OpenAutoGrowth | AI 增长闭环引擎</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <meta name="description" content="Closed-loop AI growth engine: content generation, smart execution, data analysis, and autonomous optimization.">
     <link rel="stylesheet" href="style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -182,16 +183,21 @@
                         <span class="p-label">Multimodal</span>
                     </div>
                     <div class="pipeline-arrow" id="arrow-3">→</div>
+                    <div class="pipeline-node" id="node-reviewer">
+                        <span class="p-icon">🛡️</span>
+                        <span class="p-label">Reviewer</span>
+                    </div>
+                    <div class="pipeline-arrow" id="arrow-4">→</div>
                     <div class="pipeline-node" id="node-channelexec">
                         <span class="p-icon">📡</span>
                         <span class="p-label">ChannelExec</span>
                     </div>
-                    <div class="pipeline-arrow" id="arrow-4">→</div>
+                    <div class="pipeline-arrow" id="arrow-5">→</div>
                     <div class="pipeline-node" id="node-analysis">
                         <span class="p-icon">📊</span>
                         <span class="p-label">Analysis</span>
                     </div>
-                    <div class="pipeline-arrow" id="arrow-5">→</div>
+                    <div class="pipeline-arrow" id="arrow-6">→</div>
                     <div class="pipeline-node" id="node-optimizer">
                         <span class="p-icon">⚙️</span>
                         <span class="p-label">Optimizer</span>
@@ -226,39 +232,102 @@
     </div>
 
     <div id="launch-modal" class="modal">
-        <div class="modal-content">
+        <div class="modal-content" style="max-width: 600px;">
             <div class="modal-header">
-                <h3>🎯 <span data-i18n="modal_launch_title">Launch New Promotion</span></h3>
+                <h3>🚀 <span data-i18n="modal_launch_title">Create New Campaign</span></h3>
                 <button id="btn-close-launch-modal" class="close-btn">&times;</button>
             </div>
             <div class="modal-body">
-                <div class="input-group">
-                    <label data-i18n="label_promo_goal">Promotion Goal (including GitHub URL if applicable)</label>
-                    <textarea id="promo-goal-input" class="modal-textarea" style="min-height: 80px;" placeholder="e.g., Promote my project https://github.com/CadanHu/data-analyse-system on Zhihu"></textarea>
+                <!-- 0. Campaign Type Tabs -->
+                <div class="campaign-type-tabs">
+                    <button class="tab-btn active" data-type="ecom">📦 <span data-i18n="tab_ecom">Physical Product</span></button>
+                    <button class="tab-btn" data-type="software">💻 <span data-i18n="tab_software">Software/App</span></button>
+                    <button class="tab-btn" data-type="lead">📝 <span data-i18n="tab_lead">Lead Gen</span></button>
                 </div>
+
+                <!-- 1. URL & Description -->
+                <div class="input-group">
+                    <label>🔗 <span id="label-url">Product URL</span></label>
+                    <input type="url" id="promo-url-input" class="modal-input" placeholder="https://amazon.com/dp/...">
+                </div>
+                
+                <!-- 1.5 Target Location (Dynamic) -->
+                <div id="location-group" class="input-group">
+                    <label>🌍 <span data-i18n="label_location">Target Location</span></label>
+                    <select id="promo-location-select" class="modal-input">
+                        <option value="US">United States (US)</option>
+                        <option value="CN">China (CN)</option>
+                        <option value="EU">Europe (EU)</option>
+                        <option value="SEA">Southeast Asia (SEA)</option>
+                        <option value="Global">Global / Online</option>
+                    </select>
+                </div>
+
+                <div class="input-group">
+                    <label>📝 <span data-i18n="label_promo_desc">Campaign Description</span></label>
+                    <textarea id="promo-desc-input" class="modal-textarea" style="min-height: 60px;" placeholder="Briefly describe your campaign goals..."></textarea>
+                </div>
+
+                <!-- 2. Objective & Bid Strategy -->
+                <div class="input-row" style="display: flex; gap: 1rem;">
+                    <div class="input-group" style="flex: 1.5;">
+                        <label>🎯 <span data-i18n="label_promo_objective">Objective</span></label>
+                        <select id="promo-objective-select" class="modal-input">
+                            <option value="growth">GitHub Stars / User Growth</option>
+                            <option value="awareness">Brand Awareness</option>
+                            <option value="conversion">Sales Conversion</option>
+                            <option value="traffic">Website Traffic</option>
+                        </select>
+                    </div>
+                    <div class="input-group" style="flex: 1;">
+                        <label>📊 <span data-i18n="label_promo_kpi">Target KPI</span></label>
+                        <div style="display: flex; align-items: center; gap: 4px;">
+                            <input type="number" id="promo-kpi-input" class="modal-input" value="3.0" step="0.1">
+                            <span id="kpi-unit" style="font-size: 0.8rem; color: #64748b;">ROAS</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. Budget & Timeline -->
                 <div class="input-row" style="display: flex; gap: 1rem;">
                     <div class="input-group" style="flex: 1;">
-                        <label data-i18n="label_promo_budget">Total Budget (CNY)</label>
-                        <input type="number" id="promo-budget-input" class="modal-input" value="50000">
+                        <label>💰 <span data-i18n="label_promo_budget">Total Budget (CNY)</span></label>
+                        <input type="number" id="promo-budget-input" class="modal-input" value="10000" min="100">
                     </div>
                     <div class="input-group" style="flex: 1;">
-                        <label data-i18n="label_promo_kpi">Target ROAS</label>
-                        <input type="number" id="promo-kpi-input" class="modal-input" value="3.0" step="0.1">
+                        <label>📅 <span data-i18n="label_promo_duration">Duration (Days)</span></label>
+                        <input type="number" id="promo-duration-input" class="modal-input" value="7" min="1">
                     </div>
                 </div>
+
+                <!-- 4. Channels (Visual Grid) -->
                 <div class="input-group">
-                    <label data-i18n="label_promo_channels">Target Channels</label>
-                    <div class="checkbox-group">
-                        <label><input type="checkbox" name="channel" value="zhihu" checked> Zhihu</label>
-                        <label><input type="checkbox" name="channel" value="tiktok" checked> TikTok</label>
-                        <label><input type="checkbox" name="channel" value="meta" checked> Meta</label>
-                        <label><input type="checkbox" name="channel" value="google" checked> Google</label>
+                    <label>📡 <span data-i18n="label_promo_channels">Target Channels</span></label>
+                    <div class="channel-grid">
+                        <div class="channel-card active" data-channel="zhihu">
+                            <span class="channel-icon">知</span>
+                            <span class="channel-name">Zhihu</span>
+                        </div>
+                        <div class="channel-card" data-channel="tiktok">
+                            <span class="channel-icon">🎵</span>
+                            <span class="channel-name">TikTok</span>
+                        </div>
+                        <div class="channel-card" data-channel="meta">
+                            <span class="channel-icon">f</span>
+                            <span class="channel-name">Meta</span>
+                        </div>
+                        <div class="channel-card" data-channel="google">
+                            <span class="channel-icon">G</span>
+                            <span class="channel-name">Google</span>
+                        </div>
                     </div>
                 </div>
             </div>
             <div class="modal-footer">
                 <button id="btn-cancel-launch" class="btn secondary" data-i18n="btn_cancel">Cancel</button>
-                <button id="btn-confirm-launch" class="btn primary" data-i18n="btn_confirm_launch">🚀 Start Generation</button>
+                <button id="btn-confirm-launch" class="btn primary" style="padding: 0.8rem 2rem;">
+                    🚀 <span data-i18n="btn_launch_now">Launch Campaign</span>
+                </button>
             </div>
         </div>
     </div>
