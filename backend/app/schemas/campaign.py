@@ -30,13 +30,14 @@ class BudgetSchema(BaseModel):
 
 
 class KPISchema(BaseModel):
-    metric: str = Field(..., pattern="^(GMV|CTR|CVR|ROAS|ROI|CAC|REACH)$")
+    metric: str = Field(..., description="Metric name (e.g., ROAS, CPA, CPC, awareness)")
     target: float = Field(..., gt=0)
 
 
 class TimelineSchema(BaseModel):
     start: date
     end: date
+    duration_days: Optional[int] = None
 
     @model_validator(mode="after")
     def end_after_start(self):
@@ -48,13 +49,15 @@ class TimelineSchema(BaseModel):
 class ConstraintsSchema(BaseModel):
     channels: list[str] = Field(default_factory=list)
     region: Optional[str] = None
+    url: Optional[str] = None
 
 
 # ── Request Schemas ───────────────────────────────────────────────────────────
 
 class CampaignCreate(BaseModel):
     name: Optional[str] = None
-    goal: str = Field(..., min_length=10, max_length=500)
+    campaign_type: str = Field(default="ecom")
+    goal: str = Field(..., min_length=5, max_length=1000)
     budget: BudgetSchema
     kpi: KPISchema
     timeline: Optional[TimelineSchema] = None

@@ -6,6 +6,7 @@ Output: state.review_result (APPROVED/REJECTED), state.review_feedback
 """
 import json
 import structlog
+from app.config import settings
 from app.core.llm import llm_client
 from .state import CampaignState
 

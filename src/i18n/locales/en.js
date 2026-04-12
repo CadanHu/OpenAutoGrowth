@@ -17,6 +17,7 @@ export default {
   "card_gen_label": "Output Assets",
   "card_gen_desc": "ContentGen + Multimodal agents produce A/B copy variants and visual assets in parallel.",
   "btn_view_library": "View Library",
+  "btn_history": "History",
   "btn_gen_new": "Generate New",
 
   "card_exec_title": "Smart Execution",
@@ -63,5 +64,16 @@ export default {
   "log_optimizer_fired": "Optimizer fired: {types}",
   "log_anomaly_detected": "⚠️ Anomaly: {metric} on {channel} ({severity})",
   "log_opt_status": "Loop #{loop} — {types}",
-  "log_campaign_status_change": "Campaign {id}: {old} → <strong>{new}</strong>"
+  "log_campaign_status_change": "Campaign {id}: {old} → <strong>{new}</strong>",
+  "modal_article_title": "Preview Article",
+  "label_article_title": "Title",
+  "label_article_body": "Body (Markdown)",
+  "btn_cancel": "Cancel",
+  "btn_publish": "🚀 Publish to Zhihu",
+  "modal_launch_title": "Create New Campaign",
+  "label_promo_goal": "Promotion Goal (Include GitHub URL)",
+  "btn_confirm_launch": "🚀 Start Generation",
+  "modal_history_title": "Content Library",
+  "modal_campaign_history_title": "Campaign History",
+  "btn_close": "Close"
 };

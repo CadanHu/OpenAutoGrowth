@@ -16,6 +16,10 @@ export class CampaignAPI {
         return this._request('POST', '/campaigns', body);
     }
 
+    async analyzeUrl(url, type = 'ecom') {
+        return this._request('POST', '/campaigns/analyze-url', { url, campaign_type: type });
+    }
+
     // ── GET /v1/campaigns ─────────────────────────────────────────────────
 
     async listCampaigns({ status, limit = 20, offset = 0 } = {}) {
@@ -52,6 +56,10 @@ export class CampaignAPI {
 
     async completeCampaign(id) {
         return this._request('POST', `/campaigns/${id}/complete`);
+    }
+
+    async deleteCampaign(id) {
+        return this._request('DELETE', `/campaigns/${id}`);
     }
 
     // ── GET /v1/campaigns/:id/events ─────────────────────────────────────

@@ -93,33 +93,73 @@ class DashboardController {
     }
 
     _updatePipeline(status) {
-        console.log(`[UI] Updating pipeline for status: ${status}`);
+        console.log(`[UI] Updating Neural Pipeline: ${status}`);
         
-        // Define which nodes should be ON for each stage (Cumulative)
-        const stageProgress = {
-            'IDLE':            [],
-            'PLANNING':        ['node-orchestrator', 'node-planner', 'arrow-1'],
-            'STRATEGY':        ['node-orchestrator', 'node-planner', 'node-strategy', 'arrow-1', 'arrow-2'],
-            'CONTENT_GEN':     ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'arrow-1', 'arrow-2'],
-            'MULTIMODAL':      ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'node-multimodal', 'arrow-1', 'arrow-2'],
-            'REVIEWING':       ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'node-multimodal', 'node-reviewer', 'arrow-1', 'arrow-2', 'arrow-3'],
-            'DEPLOYED':        ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'node-multimodal', 'node-reviewer', 'node-channelexec', 'arrow-1', 'arrow-2', 'arrow-3', 'arrow-4'],
-            'EXECUTING':       ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'node-multimodal', 'node-reviewer', 'node-channelexec', 'arrow-1', 'arrow-2', 'arrow-3', 'arrow-4'],
-            'ANALYZING':       ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'node-multimodal', 'node-reviewer', 'node-channelexec', 'node-analysis', 'arrow-1', 'arrow-2', 'arrow-3', 'arrow-4', 'arrow-5'],
-            'OPTIMIZING':      ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'node-multimodal', 'node-reviewer', 'node-channelexec', 'node-analysis', 'node-optimizer', 'arrow-1', 'arrow-2', 'arrow-3', 'arrow-4', 'arrow-5', 'arrow-6'],
-            'COMPLETED':       ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'node-multimodal', 'node-reviewer', 'node-channelexec', 'node-analysis', 'node-optimizer', 'arrow-1', 'arrow-2', 'arrow-3', 'arrow-4', 'arrow-5', 'arrow-6', 'arrow-loop']
+        // Helper to get all production edges
+        const productionEdges = ['edge-2-top', 'edge-2-mid', 'edge-2-bot'];
+
+        const stateMap = {
+            'IDLE': { nodes: [], edges: [] },
+            'PLANNING': { 
+                nodes: ['node-orchestrator', 'node-planner'], 
+                edges: ['edge-1'] 
+            },
+            'STRATEGY': { 
+                nodes: ['node-orchestrator', 'node-planner', 'node-strategy'], 
+                edges: ['edge-1', ...productionEdges] 
+            },
+            'CONTENT_GEN': { 
+                nodes: ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen'], 
+                edges: ['edge-1', ...productionEdges] 
+            },
+            'MULTIMODAL': { 
+                nodes: ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'node-multimodal'], 
+                edges: ['edge-1', ...productionEdges] 
+            },
+            'PENDING_REVIEW': { 
+                nodes: ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'node-multimodal', 'node-reviewer'], 
+                edges: ['edge-1', ...productionEdges, 'edge-3-top', 'edge-3-mid', 'edge-3-bot'] 
+            },
+            'PRODUCTION': { 
+                nodes: ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'node-multimodal', 'node-reviewer', 'node-channelexec'], 
+                edges: ['edge-1', ...productionEdges, 'edge-3-top', 'edge-3-mid', 'edge-3-bot', 'edge-4'] 
+            },
+            'MONITORING': { 
+                nodes: ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'node-multimodal', 'node-reviewer', 'node-channelexec', 'node-analysis'], 
+                edges: ['edge-1', ...productionEdges, 'edge-3-top', 'edge-3-mid', 'edge-3-bot', 'edge-4', 'edge-5'] 
+            },
+            'OPTIMIZING': { 
+                nodes: ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'node-multimodal', 'node-reviewer', 'node-channelexec', 'node-analysis'], 
+                edges: ['edge-1', ...productionEdges, 'edge-3-top', 'edge-3-mid', 'edge-3-bot', 'edge-4', 'edge-5'] 
+            },
+            'COMPLETED': { 
+                nodes: ['node-orchestrator', 'node-planner', 'node-strategy', 'node-contentgen', 'node-multimodal', 'node-reviewer', 'node-channelexec', 'node-analysis'], 
+                edges: ['edge-1', ...productionEdges, 'edge-3-top', 'edge-3-mid', 'edge-3-bot', 'edge-4', 'edge-5'] 
+            }
         };
 
-        const activeIds = stageProgress[status] || [];
-        
-        // If it's IDLE, clear all. Otherwise, we only add.
-        if (status === 'IDLE') {
-            document.querySelectorAll('.pipeline-node, .pipeline-arrow').forEach(el => el.classList.remove('active'));
+        const current = stateMap[status] || stateMap['IDLE'];
+
+        // 1. Clear all
+        document.querySelectorAll('.agent-neuron, .svg-edge').forEach(el => {
+            el.classList.remove('active', 'working');
+        });
+        document.getElementById('edge-retry')?.classList.add('hidden');
+
+        // 2. Set Active nodes and edges
+        current.nodes.forEach(id => document.getElementById(id)?.classList.add('active'));
+        current.edges.forEach(id => document.getElementById(id)?.classList.add('active'));
+
+        // 3. Set Working (Pulse)
+        if (current.nodes.length > 0) {
+            const lastNodeId = current.nodes[current.nodes.length - 1];
+            document.getElementById(lastNodeId)?.classList.add('working');
         }
 
-        activeIds.forEach(id => {
-            document.getElementById(id)?.classList.add('active');
-        });
+        // 4. Handle Rejection Loop
+        if (this.lastReviewStatus === 'REJECTED' && status === 'STRATEGY') {
+            document.getElementById('edge-retry')?.classList.remove('hidden');
+        }
     }
 
     _updateDynamicForm(type) {
@@ -173,16 +213,17 @@ class DashboardController {
     // ── Event subscriptions → UI updates ────────────────────────
 
     _subscribeToEvents() {
-        // Handle language changes
-        document.addEventListener('languageChanged', () => {
-            this._updateCampaignBadge(document.getElementById('campaign-status-badge').textContent);
-        });
-
-        // Campaign 状态变化 → 状态标签更新
+        // ... (other subscriptions)
+        
         globalEventBus.subscribe('StatusChanged', ({ payload: { old_status, new_status }, campaign_id }) => {
             this.log(i18n.t('log_campaign_status_change', { id: campaign_id, old: old_status, new: new_status }), 'info');
             this._updateCampaignBadge(new_status);
             this._updatePipeline(new_status);
+        });
+
+        // Store review status for DAG conditional edges
+        globalEventBus.subscribe('ReviewCompleted', ({ payload: { status } }) => {
+            this.lastReviewStatus = status; 
         });
 
         globalEventBus.subscribe('PlanGenerated', ({ payload: { plan } }) => {
@@ -245,6 +286,33 @@ class DashboardController {
             });
         });
 
+        // AI Analyze URL logic
+        document.getElementById('btn-analyze-url')?.addEventListener('click', async () => {
+            const urlInput = document.getElementById('promo-url-input');
+            const url = urlInput.value.trim();
+            const type = document.querySelector('.tab-btn.active')?.dataset.type || 'ecom';
+
+            if (!url || !url.startsWith('http')) {
+                alert('Please enter a valid URL first.');
+                return;
+            }
+
+            this._setAnalyzeLoading(true);
+            try {
+                const response = await api.analyzeUrl(url, type);
+                if (response.success) {
+                    this._fillCampaignForm(response.data);
+                    this.log('AI Analysis complete: Form updated with product insights!', 'success');
+                } else {
+                    this.log(`AI Analysis failed: ${response.error}`, 'error');
+                }
+            } catch (err) {
+                this.log(`AI Analysis failed: ${err.message}`, 'error');
+            } finally {
+                this._setAnalyzeLoading(false);
+            }
+        });
+
         // Channel card selection
         document.querySelectorAll('.channel-card').forEach(card => {
             card.addEventListener('click', () => {
@@ -259,9 +327,13 @@ class DashboardController {
 
         // Card action buttons
         document.getElementById('btn-gen-new')?.addEventListener('click',   () => this._triggerContentGen());
-        document.getElementById('btn-view-history')?.addEventListener('click', () => this._showHistoryModal());
+        document.getElementById('btn-view-library')?.addEventListener('click', () => this._showHistoryModal());
+        document.getElementById('btn-view-history')?.addEventListener('click', () => this._showCampaignModal());
+        document.getElementById('btn-channels')?.addEventListener('click',     () => this._showComingSoon('Channels Management'));
         document.getElementById('btn-exec')?.addEventListener('click',       () => this._triggerExecution());
+        document.getElementById('btn-export-data')?.addEventListener('click',  () => this._showComingSoon('Data Export'));
         document.getElementById('btn-sync')?.addEventListener('click',       () => this._triggerAnalysis());
+        document.getElementById('btn-view-rules')?.addEventListener('click',  () => this._showComingSoon('Rule Engine Dashboard'));
         document.getElementById('btn-optimize')?.addEventListener('click',   () => this._triggerOptimizer());
 
         // Article Modal actions
@@ -277,6 +349,10 @@ class DashboardController {
         // History Modal actions
         document.getElementById('btn-close-history-modal')?.addEventListener('click', () => this._closeHistoryModal());
         document.getElementById('btn-close-history')?.addEventListener('click', () => this._closeHistoryModal());
+
+        // Campaign Modal actions
+        document.getElementById('btn-close-campaign-modal')?.addEventListener('click', () => this._closeCampaignModal());
+        document.getElementById('btn-close-campaign')?.addEventListener('click', () => this._closeCampaignModal());
 
         // Language buttons
         document.getElementById('btn-lang-zh')?.addEventListener('click', () => i18n.setLocale('zh'));
@@ -306,15 +382,97 @@ class DashboardController {
 
     async _showHistoryModal() {
         const historyList = document.getElementById('history-list');
-        historyList.innerHTML = '<div class="loading">Loading history...</div>';
+        const modalTitle = document.getElementById('library-modal-title');
+        
+        // Update Title via i18n
+        if (modalTitle) modalTitle.textContent = i18n.t('modal_history_title');
+        
+        historyList.innerHTML = '<div class="loading">Loading library...</div>';
         document.getElementById('history-modal').style.display = 'block';
 
         const response = await api.listArticles();
         if (response.success) {
             this._renderHistoryList(response.data.items);
         } else {
-            historyList.innerHTML = `<div class="error">Failed to load history: ${response.error}</div>`;
+            historyList.innerHTML = `<div class="error">Failed to load library: ${response.error}</div>`;
         }
+    }
+
+    _closeHistoryModal() {
+        document.getElementById('history-modal').style.display = 'none';
+    }
+
+    async _showCampaignModal() {
+        const campaignList = document.getElementById('campaign-list');
+        campaignList.innerHTML = '<div class="loading">Loading campaign history...</div>';
+        document.getElementById('campaign-modal').style.display = 'block';
+
+        const response = await api.listCampaigns();
+        if (response.success) {
+            this._renderCampaignList(response.data.items);
+        } else {
+            campaignList.innerHTML = `<div class="error">Failed to load history: ${response.error}</div>`;
+        }
+    }
+
+    _closeCampaignModal() {
+        document.getElementById('campaign-modal').style.display = 'none';
+    }
+
+    _renderCampaignList(items) {
+        const campaignList = document.getElementById('campaign-list');
+        if (!items || items.length === 0) {
+            campaignList.innerHTML = '<div class="empty">No campaigns found.</div>';
+            return;
+        }
+
+        campaignList.innerHTML = '';
+        items.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'history-item';
+            div.style.borderLeft = '4px solid var(--accent)';
+            div.style.cursor = 'pointer';
+            div.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                    <h4 style="margin: 0; color: var(--accent);">${item.id.slice(0,8).toUpperCase()}</h4>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span class="status-badge status-${item.status.toLowerCase()}">${item.status}</span>
+                        <button class="campaign-delete-btn" title="Delete" data-id="${item.id}" style="background: none; border: none; color: var(--text-dim); cursor: pointer; padding: 0 4px; font-size: 1.1rem;">✕</button>
+                    </div>
+                </div>
+                <p style="font-size: 0.85rem; margin: 8px 0; color: var(--text-dim); line-height: 1.4;">
+                    ${item.goal || 'No goal set'}
+                </p>
+                <div class="history-meta" style="border-top: 1px solid var(--border); padding-top: 8px; margin-top: 8px;">
+                    <span>📅 ${new Date(item.created_at).toLocaleDateString()}</span>
+                    <span>💰 ${item.budget?.total} ${item.budget?.currency}</span>
+                </div>
+            `;
+            div.onclick = () => {
+                this.activeCampaignId = item.id;
+                this._updateCampaignBadge(item.status);
+                this._closeCampaignModal();
+                this.log(`Switched to historical campaign: ${item.id.slice(0,8)}`, 'info');
+            };
+            div.querySelector('.campaign-delete-btn').onclick = async (e) => {
+                e.stopPropagation();
+                if (!confirm(`Delete campaign ${item.id.slice(0,8)} and all its data?`)) return;
+                const res = await api.deleteCampaign(item.id);
+                if (res.success) {
+                    div.remove();
+                    if (this.activeCampaignId === item.id) {
+                        this.activeCampaignId = null;
+                        this._updateCampaignBadge('NO CAMPAIGN');
+                    }
+                    if (campaignList.children.length === 0) {
+                        campaignList.innerHTML = '<div class="empty">No campaigns found.</div>';
+                    }
+                } else {
+                    alert('Delete failed: ' + res.error);
+                }
+            };
+            campaignList.appendChild(div);
+        });
     }
 
     _renderHistoryList(items) {
@@ -328,6 +486,7 @@ class DashboardController {
         items.forEach(item => {
             const div = document.createElement('div');
             div.className = 'history-item';
+            div.style.cursor = 'pointer';
             div.innerHTML = `
                 <h4>${item.title || 'Untitled'}</h4>
                 <div class="history-meta">
@@ -336,7 +495,7 @@ class DashboardController {
                     <button class="history-delete-btn" title="Delete" data-id="${item.id}">✕</button>
                 </div>
             `;
-            div.querySelector('h4').onclick = () => {
+            div.onclick = () => {
                 this._closeHistoryModal();
                 this._showArticleModal(item);
             };
@@ -357,14 +516,10 @@ class DashboardController {
         });
     }
 
-    _closeHistoryModal() {
-        document.getElementById('history-modal').style.display = 'none';
-    }
-
     async _confirmLaunchPromotion() {
         const type      = document.querySelector('.tab-btn.active').dataset.type;
         const url       = document.getElementById('promo-url-input').value.trim();
-        const desc      = document.getElementById('promo-desc-input').value.trim();
+        const desc      = document.getElementById('promo-goal-input').value.trim();
         const objective = document.getElementById('promo-objective-select').value;
         const budget    = parseInt(document.getElementById('promo-budget-input')?.value || '10000');
         const kpi       = parseFloat(document.getElementById('promo-kpi-input')?.value || '1.0');
@@ -384,20 +539,32 @@ class DashboardController {
 
         const campaignGoal = `[Type: ${type.toUpperCase()}] Objective: ${objective}. Desc: ${desc}. URL: ${url}. Region: ${location}.`;
 
+        // Map frontend internal objectives to backend-friendly metric names if needed
+        const metricMap = {
+            'growth':     'CAC',
+            'awareness':  'REACH',
+            'conversion': 'ROAS',
+            'traffic':    'CTR'
+        };
+        const backendMetric = metricMap[objective] || 'ROAS';
+
         const response = await api.createCampaign({
             goal:        campaignGoal,
             campaign_type: type,
-            budget:      { total: budget, currency: 'CNY', duration_days: duration },
+            budget:      { total: budget, currency: 'CNY' }, // Simplified
             timeline:    { 
                 start: new Date().toISOString().split('T')[0], 
-                end:   new Date(Date.now() + duration * 86400000).toISOString().split('T')[0] 
+                end:   new Date(Date.now() + duration * 86400000).toISOString().split('T')[0],
+                duration_days: duration
             },
-            kpi:         { metric: objective, target: kpi },
+            kpi:         { metric: backendMetric, target: kpi },
             constraints: { channels: channels, region: location, url: url },
         });
 
         if (!response.success) {
-            this.log(`Error: ${response.error}`, 'error');
+            // Fix: Show readable error instead of [object Object]
+            const errorMsg = typeof response.error === 'object' ? JSON.stringify(response.error) : response.error;
+            this.log(`Launch failed: ${errorMsg}`, 'error');
             this._setButtonState('btn-launch', i18n.t('btn_launch'), false);
             return;
         }
@@ -665,6 +832,46 @@ class DashboardController {
         if (btn) { btn.textContent = text; btn.disabled = disabled; btn.style.opacity = disabled ? '0.6' : '1'; }
     }
 
+    _setAnalyzeLoading(loading) {
+        const btn = document.getElementById('btn-analyze-url');
+        const icon = document.getElementById('analyze-icon');
+        if (btn) {
+            btn.disabled = loading;
+            btn.style.opacity = loading ? '0.7' : '1';
+            if (icon) icon.textContent = loading ? '⏳' : '✨';
+        }
+    }
+
+    _fillCampaignForm(data) {
+        if (!data) return;
+        
+        // Product Identity
+        const descInput = document.getElementById('promo-goal-input');
+        if (descInput) {
+            const productPart = data.product_name ? `${data.product_name}: ` : "";
+            const descPart = data.description || "";
+            let uspsPart = "";
+            if (Array.isArray(data.core_usps) && data.core_usps.length > 0) {
+                uspsPart = `\n\nUSPs:\n- ${data.core_usps.join('\n- ')}`;
+            }
+            descInput.value = `${productPart}${descPart}${uspsPart}`;
+        }
+
+        // Objective mapping
+        const objectiveSelect = document.getElementById('promo-objective-select');
+        const objectiveMap = {
+            'brand_awareness':  'awareness',
+            'user_growth':      'growth',
+            'sales_conversion': 'conversion',
+            'website_traffic':  'traffic'
+        };
+        const mappedObj = objectiveMap[data.campaign_goal_suggested];
+        if (mappedObj && objectiveSelect) {
+            objectiveSelect.value = mappedObj;
+            this._updateKpiUnit(mappedObj);
+        }
+    }
+
     _animateChartBars(roas = 2.5) {
         const bars = document.querySelectorAll('.bar');
         const heights = [
@@ -683,6 +890,11 @@ class DashboardController {
             const el = document.getElementById('exec-reach');
             if (el && el.textContent.includes('%')) el.textContent = `${reach}%`;
         }, 4000);
+    }
+
+    _showComingSoon(feature) {
+        this.log(`Feature [${feature}] is coming soon in v0.1.0!`, 'info');
+        alert(`${feature} is currently under development and will be available in the next update.`);
     }
 }
 

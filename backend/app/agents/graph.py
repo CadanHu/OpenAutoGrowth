@@ -91,8 +91,10 @@ def build_campaign_graph(checkpointer=None):
         "optimizer_node",
         should_loop,
         {
-            "loop": "strategy_node",   # loop back for optimization
-            "done": END,
+            "loop_strategy": "strategy_node",     # Change budget/channel mix
+            "loop_content":  "content_gen_node",   # Rewrite copy/refresh creative
+            "loop_exec":     "channel_exec_node",  # Just push bid/pause updates
+            "done":          END,
         },
     )
 

@@ -46,6 +46,96 @@
                 </button>
             </header>
 
+            <!-- ── Agentic Pipeline Neural Map (DAG) ──────────────── -->
+            <section class="pipeline-section">
+                <div class="pipeline-canvas-grid">
+                    
+                    <!-- Row 1 -->
+                    <div class="grid-cell"></div>
+                    <div class="grid-cell"></div>
+                    <div class="grid-cell">
+                        <div id="node-strategy" class="agent-neuron">
+                            <span class="neuron-icon">📈</span>
+                            <span class="neuron-label">Strategy</span>
+                        </div>
+                    </div>
+                    <div class="grid-cell"></div>
+                    <div class="grid-cell"></div>
+
+                    <!-- Row 2 -->
+                    <div class="grid-cell">
+                        <div id="node-orchestrator" class="agent-neuron central">
+                            <span class="neuron-icon">🧠</span>
+                            <span class="neuron-label">Orchestrator</span>
+                        </div>
+                    </div>
+                    <div class="grid-cell">
+                        <div id="node-planner" class="agent-neuron central">
+                            <span class="neuron-icon">🗺️</span>
+                            <span class="neuron-label">Planner</span>
+                        </div>
+                    </div>
+                    <div class="grid-cell">
+                        <div id="node-contentgen" class="agent-neuron">
+                            <span class="neuron-icon">📝</span>
+                            <span class="neuron-label">ContentGen</span>
+                        </div>
+                    </div>
+                    <div class="grid-cell">
+                        <div id="node-reviewer" class="agent-neuron gate">
+                            <span class="neuron-icon">⚖️</span>
+                            <span class="neuron-label">Reviewer</span>
+                        </div>
+                    </div>
+                    <div class="grid-cell">
+                        <div id="node-channelexec" class="agent-neuron central">
+                            <span class="neuron-icon">📡</span>
+                            <span class="neuron-label">Execution</span>
+                        </div>
+                    </div>
+
+                    <!-- Row 3 -->
+                    <div class="grid-cell"></div>
+                    <div class="grid-cell"></div>
+                    <div class="grid-cell">
+                        <div id="node-multimodal" class="agent-neuron">
+                            <span class="neuron-icon">🎨</span>
+                            <span class="neuron-label">Multimodal</span>
+                        </div>
+                    </div>
+                    <div class="grid-cell"></div>
+                    <div class="grid-cell">
+                        <div id="node-analysis" class="agent-neuron">
+                            <span class="neuron-icon">📊</span>
+                            <span class="neuron-label">Optimizer</span>
+                        </div>
+                    </div>
+
+                    <!-- SVG Connections Overlay (Full Size) -->
+                    <svg class="pipeline-svg-overlay" viewBox="0 0 1200 400" preserveAspectRatio="xMidYMid meet">
+                        <defs>
+                            <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+                                <feGaussianBlur stdDeviation="3" result="blur" />
+                                <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                            </filter>
+                        </defs>
+                        <!-- Precise Coordinates based on 5x3 grid (Centers: 120, 360, 600, 840, 1080) -->
+                        <path d="M 120 200 L 360 200" class="svg-edge" id="edge-1" />
+                        
+                        <path d="M 360 200 L 600 65"  class="svg-edge" id="edge-2-top" />
+                        <path d="M 360 200 L 600 200" class="svg-edge" id="edge-2-mid" />
+                        <path d="M 360 200 L 600 335" class="svg-edge" id="edge-2-bot" />
+                        
+                        <path d="M 600 65  L 840 200" class="svg-edge" id="edge-3-top" />
+                        <path d="M 600 200 L 840 200" class="svg-edge" id="edge-3-mid" />
+                        <path d="M 600 335 L 840 200" class="svg-edge" id="edge-3-bot" />
+                        
+                        <path d="M 840 200 L 1080 200"  class="svg-edge" id="edge-4" />
+                        <path d="M 1080 200 L 1080 335" class="svg-edge" id="edge-5" />
+                    </svg>
+                </div>
+            </section>
+
             <!-- ── Agent Cards Grid ────────────────────────────── -->
             <section class="grid-container">
 
@@ -66,7 +156,7 @@
                         <p class="description" data-i18n="card_gen_desc">ContentGen + Multimodal agents produce A/B copy variants and visual assets in parallel.</p>
                     </div>
                     <div class="card-footer">
-                        <button class="btn secondary" data-i18n="btn_view_library">View Library</button>
+                        <button id="btn-view-library" class="btn secondary" data-i18n="btn_view_library">View Library</button>
                         <button id="btn-view-history" class="btn secondary" data-i18n="btn_history">History</button>
                         <button id="btn-gen-new" class="btn primary" data-i18n="btn_gen_new">Generate New</button>
                     </div>
@@ -88,7 +178,7 @@
                         </div>
                     </div>
                     <div class="card-footer">
-                        <button class="btn secondary" data-i18n="btn_channels">Channels</button>
+                        <button id="btn-channels" class="btn secondary" data-i18n="btn_channels">Channels</button>
                         <button id="btn-exec" class="btn primary" data-i18n="btn_exec_batch">Execute Batch</button>
                     </div>
                 </div>
@@ -113,7 +203,7 @@
                         </div>
                     </div>
                     <div class="card-footer">
-                        <button class="btn secondary" data-i18n="btn_export_data">Export Data</button>
+                        <button id="btn-export-data" class="btn secondary" data-i18n="btn_export_data">Export Data</button>
                         <button id="btn-sync" class="btn primary" data-i18n="btn_sync_analytics">Sync Analytics</button>
                     </div>
                 </div>
@@ -136,7 +226,7 @@
                         </p>
                     </div>
                     <div class="card-footer">
-                        <button class="btn secondary" data-i18n="btn_view_rules">View Rules</button>
+                        <button id="btn-view-rules" class="btn secondary" data-i18n="btn_view_rules">View Rules</button>
                         <button id="btn-optimize" class="btn primary" data-i18n="btn_run_optimizer">Run Optimizer</button>
                     </div>
                 </div>
@@ -155,56 +245,6 @@
                     </div>
                 </div>
             </section>
-
-            <!-- ── Agent Pipeline Visual ───────────────────────── -->
-            <section class="pipeline-section">
-                <h3 data-i18n="pipeline_header">Agent Pipeline</h3>
-                <div class="pipeline">
-                    <div class="pipeline-node" id="node-orchestrator">
-                        <span class="p-icon">🧠</span>
-                        <span class="p-label">Orchestrator</span>
-                    </div>
-                    <div class="pipeline-arrow" id="arrow-1">→</div>
-                    <div class="pipeline-node" id="node-planner">
-                        <span class="p-icon">🗺️</span>
-                        <span class="p-label">Planner</span>
-                    </div>
-                    <div class="pipeline-arrow" id="arrow-2">→</div>
-                    <div class="pipeline-node parallel" id="node-strategy">
-                        <span class="p-icon">🎯</span>
-                        <span class="p-label">Strategy</span>
-                    </div>
-                    <div class="pipeline-node parallel" id="node-contentgen">
-                        <span class="p-icon">📝</span>
-                        <span class="p-label">ContentGen</span>
-                    </div>
-                    <div class="pipeline-node parallel" id="node-multimodal">
-                        <span class="p-icon">🎨</span>
-                        <span class="p-label">Multimodal</span>
-                    </div>
-                    <div class="pipeline-arrow" id="arrow-3">→</div>
-                    <div class="pipeline-node" id="node-reviewer">
-                        <span class="p-icon">🛡️</span>
-                        <span class="p-label">Reviewer</span>
-                    </div>
-                    <div class="pipeline-arrow" id="arrow-4">→</div>
-                    <div class="pipeline-node" id="node-channelexec">
-                        <span class="p-icon">📡</span>
-                        <span class="p-label">ChannelExec</span>
-                    </div>
-                    <div class="pipeline-arrow" id="arrow-5">→</div>
-                    <div class="pipeline-node" id="node-analysis">
-                        <span class="p-icon">📊</span>
-                        <span class="p-label">Analysis</span>
-                    </div>
-                    <div class="pipeline-arrow" id="arrow-6">→</div>
-                    <div class="pipeline-node" id="node-optimizer">
-                        <span class="p-icon">⚙️</span>
-                        <span class="p-label">Optimizer</span>
-                    </div>
-                    <div class="pipeline-arrow loop-back" id="arrow-loop">↩ Loop</div>
-                </div>
-            </section>
         </main>
 
         <footer class="system-footer">
@@ -217,16 +257,34 @@
     <div id="history-modal" class="modal">
         <div class="modal-content" style="max-width: 1000px;">
             <div class="modal-header">
-                <h3>📜 <span data-i18n="modal_history_title">Article History</span></h3>
+                <h3>📜 <span id="library-modal-title" data-i18n="modal_history_title">Article History</span></h3>
                 <button id="btn-close-history-modal" class="close-btn">&times;</button>
             </div>
             <div class="modal-body">
                 <div id="history-list" class="history-grid">
-                    <!-- History items will be injected here -->
+                    <!-- Dynamic Items -->
                 </div>
             </div>
             <div class="modal-footer">
                 <button id="btn-close-history" class="btn secondary" data-i18n="btn_close">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Campaign History Modal ────────────────────────── -->
+    <div id="campaign-modal" class="modal">
+        <div class="modal-content" style="max-width: 1000px;">
+            <div class="modal-header">
+                <h3>📊 <span data-i18n="modal_campaign_history_title">Campaign History</span></h3>
+                <button id="btn-close-campaign-modal" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="campaign-list" class="history-grid">
+                    <!-- Dynamic Items -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="btn-close-campaign" class="btn secondary" data-i18n="btn_close">Close</button>
             </div>
         </div>
     </div>
@@ -248,7 +306,13 @@
                 <!-- 1. URL & Description -->
                 <div class="input-group">
                     <label>🔗 <span id="label-url">Product URL</span></label>
-                    <input type="url" id="promo-url-input" class="modal-input" placeholder="https://amazon.com/dp/...">
+                    <div style="display: flex; gap: 8px;">
+                        <input type="url" id="promo-url-input" class="modal-input" style="flex: 1;" placeholder="https://amazon.com/dp/...">
+                        <button id="btn-analyze-url" class="btn secondary" style="white-space: nowrap; padding: 0 1rem; display: flex; align-items: center; gap: 4px;">
+                            <span id="analyze-icon">✨</span>
+                            <span data-i18n="btn_analyze">AI Analyze</span>
+                        </button>
+                    </div>
                 </div>
                 
                 <!-- 1.5 Target Location (Dynamic) -->
@@ -265,7 +329,7 @@
 
                 <div class="input-group">
                     <label>📝 <span data-i18n="label_promo_desc">Campaign Description</span></label>
-                    <textarea id="promo-desc-input" class="modal-textarea" style="min-height: 60px;" placeholder="Briefly describe your campaign goals..."></textarea>
+                    <textarea id="promo-goal-input" class="modal-textarea" style="min-height: 60px;" placeholder="Briefly describe your campaign goals..."></textarea>
                 </div>
 
                 <!-- 2. Objective & Bid Strategy -->

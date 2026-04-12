@@ -134,7 +134,7 @@ async def _call_llm(prompt: str, is_article: bool = False) -> list[dict]:
         )
     else:
         system_prompt += (
-            " Each variant must have: variant_label (A/B/C), hook, body, cta, channel. "
+            " Each variant must have: variant_label (A/B/C), title (MAX 15 chars), hook, body, cta, channel. "
         )
 
     system_prompt += "Output ONLY valid JSON, no markdown outside the JSON structure."
@@ -231,7 +231,7 @@ async def content_gen_node(state: CampaignState) -> dict:
                         bundle_id=bundle_id,
                         campaign_id=camp_uuid,
                         variant_label=var.get("variant_label", "A"),
-                        hook=var.get("title") or var.get("hook"),
+                        hook=var.get("title") or var.get("hook") or "Untitled",
                         body=var.get("body"),
                         cta=var.get("cta"),
                         channel=var.get("channel"),

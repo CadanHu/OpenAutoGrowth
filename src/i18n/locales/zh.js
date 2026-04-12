@@ -73,6 +73,7 @@ export default {
   "modal_launch_title": "发起新推广",
   "label_promo_goal": "推广目标 (包含 GitHub URL)",
   "btn_confirm_launch": "🚀 开始生成",
-  "modal_history_title": "文章历史记录",
+  "modal_history_title": "生成资源库",
+  "modal_campaign_history_title": "活动历史记录",
   "btn_close": "关闭"
 };

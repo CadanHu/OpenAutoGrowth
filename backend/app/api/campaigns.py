@@ -24,6 +24,43 @@ from app.core.event_bus import event_bus
 logger = structlog.get_logger(__name__)
 router = APIRouter()
 
+
+@router.post("/analyze-url")
+async def analyze_url_endpoint(payload: dict):
+    """
+    Scrape and analyze a URL to extract marketing insights.
+    Used for pre-filling the campaign creation form.
+    """
+    from app.agents.analysis import url_analyzer
+    url = payload.get("url")
+    campaign_type = payload.get("campaign_type", "ecom")
+    
+    if not url:
+        raise HTTPException(status_code=400, detail="URL is required")
+        
+    logger.info("analyzing_url", url=url, type=campaign_type)
+    result = await url_analyzer.analyze(url, campaign_type)
+    
+    if "error" in result:
+        raise HTTPException(status_code=500, detail=result["error"])
+        
+    return result
+
+
+@router.post("/analyze-url")
+async def analyze_url_endpoint(payload: dict):
+    """Scrape and analyze a URL to extract marketing insights."""
+    from app.agents.analysis import url_analyzer
+    url = payload.get("url")
+    campaign_type = payload.get("campaign_type", "ecom")
+    if not url:
+        raise HTTPException(status_code=400, detail="URL is required")
+    logger.info("analyzing_url", url=url, type=campaign_type)
+    result = await url_analyzer.analyze(url, campaign_type)
+    if "error" in result:
+        raise HTTPException(status_code=500, detail=result["error"])
+    return result
+
 # Allowed status transitions
 TRANSITIONS: dict[str, list[str]] = {
     "DRAFT":           ["PLANNING"],
@@ -178,6 +215,23 @@ async def resume_campaign(campaign_id: UUID, db: AsyncSession = Depends(get_db))
 async def complete_campaign(campaign_id: UUID, db: AsyncSession = Depends(get_db)):
     campaign = await _get_campaign_or_404(campaign_id, db)
     return await _transition(campaign, "COMPLETED", db)
+
+
+@router.delete("/{campaign_id}", status_code=204)
+async def delete_campaign(campaign_id: UUID, db: AsyncSession = Depends(get_db)):
+    """Delete a campaign and all its sub-resources."""
+    # Ensure ContentBundle is imported so SQLAlchemy handles cascade if configured
+    from app.models.content import ContentBundle
+    campaign = await db.get(Campaign, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail=f"Campaign {campaign_id} not found")
+    
+    # We load them to ensure ORM-side cascade works (sqlalchemy will handle orphans if loaded)
+    # Alternatively, ensure DB has ON DELETE CASCADE.
+    # In async pg/sqlite, loading them is safer for ORM cascade.
+    await db.delete(campaign)
+    await db.commit()
+    return None
 
 
 # ── Sub-resources ─────────────────────────────────────────────────────────────

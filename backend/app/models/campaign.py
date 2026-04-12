@@ -63,8 +63,9 @@ class Campaign(Base):
     )
 
     organization: Mapped["Organization"] = relationship("Organization", back_populates="campaigns")
-    plans: Mapped[list["Plan"]] = relationship("Plan", back_populates="campaign")
-    events: Mapped[list["DomainEvent"]] = relationship("DomainEvent", back_populates="campaign")
+    plans: Mapped[list["Plan"]] = relationship("Plan", back_populates="campaign", cascade="all, delete-orphan")
+    events: Mapped[list["DomainEvent"]] = relationship("DomainEvent", back_populates="campaign", cascade="all, delete-orphan")
+    content_bundles: Mapped[list["ContentBundle"]] = relationship("app.models.content.ContentBundle", cascade="all, delete-orphan", overlaps="campaign")
 
 
 class Plan(Base):
@@ -77,7 +78,7 @@ class Plan(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     campaign: Mapped[Campaign] = relationship("Campaign", back_populates="plans")
-    tasks: Mapped[list["Task"]] = relationship("Task", back_populates="plan")
+    tasks: Mapped[list["Task"]] = relationship("Task", back_populates="plan", cascade="all, delete-orphan")
 
 
 class Task(Base):

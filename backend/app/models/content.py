@@ -34,8 +34,8 @@ class ContentBundle(Base):
     generation_params: Mapped[Optional[dict]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    copies: Mapped[list["Copy"]] = relationship("Copy", back_populates="bundle")
-    assets: Mapped[list["ContentAsset"]] = relationship("ContentAsset", back_populates="bundle")
+    copies: Mapped[list["Copy"]] = relationship("Copy", back_populates="bundle", cascade="all, delete-orphan")
+    assets: Mapped[list["ContentAsset"]] = relationship("ContentAsset", back_populates="bundle", cascade="all, delete-orphan")
 
 
 class Copy(Base):
