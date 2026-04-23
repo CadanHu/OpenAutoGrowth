@@ -87,10 +87,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   router.setOutlet(outlet);
 
+  // Dedicated agent pages must register BEFORE the generic /agents/:id
+  // placeholder so their concrete patterns win the match.
   router
-    .register('/',                     () => import('./src/ui/pages/hub.js'))
-    .register('/campaigns',             () => import('./src/ui/pages/campaigns.js'))
-    .register('/agents/:id',            () => import('./src/ui/pages/agent-placeholder.js'))
+    .register('/',                       () => import('./src/ui/pages/hub.js'))
+    .register('/campaigns',              () => import('./src/ui/pages/campaigns.js'))
+    .register('/agents/content-gen',     () => import('./src/ui/pages/agent-content-gen.js'))
+    .register('/agents/optimizer',       () => import('./src/ui/pages/agent-optimizer.js'))
+    .register('/agents/:id',             () => import('./src/ui/pages/agent-placeholder.js'))
     .setFallback('/');
 
   const shell = new AppShell();
