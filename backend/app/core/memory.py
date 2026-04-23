@@ -56,28 +56,23 @@ class MemorySystem:
 
     async def persist(self, record: dict, db_session) -> str:
         """
-        Store an optimization learning record with vector embedding.
-
-        Args:
-            record: { campaign_id, type, content, metadata }
-            db_session: AsyncSession
-
-        Returns:
-            Memory record ID
+        Store an optimization learning record.
+        record: { campaign_id, type, content, metadata }
         """
         from app.models.optimization import AgentMemory
 
-        content = record.get("content") or json.dumps(record)
-        embedding = await self._embed(content)
-
+        content = record.get("content") or ""
+        # In production: embedding = await self._embed(content)
+        
         memory = AgentMemory(
             id=uuid.uuid4(),
-            campaign_id=record.get("campaign_id"),
+            campaign_id=uuid.UUID(record["campaign_id"]) if isinstance(record.get("campaign_id"), str) else record.get("campaign_id"),
             memory_type=record.get("type", "OPTIMIZATION_LEARNING"),
             content=content,
             metadata_=record.get("metadata"),
         )
         db_session.add(memory)
+        # Flush is enough for the ID to be available, commit is handled by the caller/middleware
         await db_session.flush()
 
         logger.info("memory_persisted", id=str(memory.id), type=memory.memory_type)
@@ -85,34 +80,32 @@ class MemorySystem:
 
     async def get_similar(self, query: str, top_k: int = 3, db_session=None) -> list[dict]:
         """
-        Semantic search over long-term memories using pgvector cosine similarity.
-
-        Production: uses text-embedding-3 vectors for similarity search.
-        Stub: returns keyword match fallback.
+        Search for similar past experiences.
+        Fallback to keyword search since pgvector/embedding is a stub for now.
         """
         if db_session is None:
             return []
 
-        from sqlalchemy import select, text
+        from sqlalchemy import select
         from app.models.optimization import AgentMemory
 
-        # TODO: replace with vector similarity query when embeddings are populated
-        # query_vec = await self._embed(query)
-        # stmt = select(AgentMemory).order_by(
-        #     AgentMemory.embedding.cosine_distance(query_vec)
-        # ).limit(top_k)
-
-        # Keyword fallback
+        # Simple keyword fallback: match parts of the goal/query in the content
+        # We use ilike for a very basic "experience retrieval"
         stmt = (
             select(AgentMemory)
-            .where(AgentMemory.content.ilike(f"%{query[:50]}%"))
+            .where(AgentMemory.content.ilike(f"%{query[:30]}%"))
             .limit(top_k)
         )
         result = await db_session.execute(stmt)
         rows = result.scalars().all()
 
         return [
-            {"id": str(r.id), "content": r.content, "type": r.memory_type}
+            {
+                "id": str(r.id), 
+                "content": r.content, 
+                "type": r.memory_type,
+                "metadata": r.metadata_
+            }
             for r in rows
         ]
 

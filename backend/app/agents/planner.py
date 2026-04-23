@@ -29,12 +29,29 @@ def _print_ascii_dag(tasks: list[dict]):
         print(f" {task['id']:<4} | {task['agent_type']:<15} | Deps: {deps:<15}{parallel}")
     
     print("="*50 + "\n")
-
 async def planner_node(state: CampaignState) -> dict:
     """
     Planner Agent: Uses LLM to dynamically generate a task DAG based on the goal.
+    Now incorporates historical insights from MemorySystem.
     """
-    logger.info("planner_start", campaign_id=state["campaign_id"], goal=state["goal"][:60])
+    campaign_id = state.get("campaign_id", "unknown")
+    goal = state.get("goal", "")
+    logger.info("planner_start", campaign_id=campaign_id, goal=goal[:60])
+
+    # 1. Retrieve Historical Experience from Memory
+    from app.core.memory import memory_system
+    from app.database import async_session_factory
+    historical_context = ""
+    try:
+        async with async_session_factory() as db:
+            past_memories = await memory_system.get_similar(goal, top_k=2, db_session=db)
+            if past_memories:
+                historical_context = "\n### RELEVANT PAST EXPERIENCES ###\n"
+                for m in past_memories:
+                    historical_context += f"- LEARNING: {m['content']}\n"
+                historical_context += "Use these learnings to create a more robust plan.\n"
+    except Exception as e:
+        logger.warn("planner_memory_fetch_failed", error=str(e))
 
     system_prompt = (
         "You are a senior AI Solutions Architect. Your task is to decompose a marketing goal into a "
@@ -51,9 +68,12 @@ async def planner_node(state: CampaignState) -> dict:
         "Ensure the graph is logical: e.g., CHANNEL_EXEC depends on CONTENT_GEN."
     )
 
-    user_prompt = f"Product Goal: {state['goal']}\nConstraints: {json.dumps(state.get('constraints', {}))}"
+    user_prompt = f"Product Goal: {goal}\nConstraints: {json.dumps(state.get('constraints', {}))}"
+    if historical_context:
+        user_prompt += historical_context
 
     try:
+
         # 1. Dynamic Generation via LLM
         raw_response = await llm_client.chat_completion(
             system=system_prompt,

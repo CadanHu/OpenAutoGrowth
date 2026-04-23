@@ -96,10 +96,29 @@ async def optimizer_node(state: CampaignState) -> dict:
         logger.error("optimizer_ai_failed", error=str(e))
 
     # 3. Merge Actions (Rules + AI)
-    # Note: Rules usually have higher priority for immediate stops/safety
     combined_actions = rule_actions + ai_actions
-    
     new_loop_count = loop_count + 1
+
+    # --- Persist Insight to Long-term Memory ---
+    if analysis_summary and analysis_summary != "No AI analysis performed.":
+        from app.core.memory import memory_system
+        from app.database import async_session_factory
+        try:
+            async with async_session_factory() as db:
+                await memory_system.persist({
+                    "campaign_id": campaign_id,
+                    "type": "OPTIMIZATION_LEARNING",
+                    "content": f"Goal: {state.get('goal')}\nIssue: {analysis_summary}",
+                    "metadata": {
+                        "loop": loop_count,
+                        "actions": [a["type"] for a in combined_actions],
+                        "metrics": metrics
+                    }
+                }, db)
+                await db.commit()
+                logger.info("optimizer_insight_saved", campaign_id=campaign_id)
+        except Exception as e:
+            logger.warn("optimizer_memory_save_failed", error=str(e))
 
     await event_bus.publish(
         "OptimizationApplied",

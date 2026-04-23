@@ -3,321 +3,55 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OpenAutoGrowth | AI 增长闭环引擎</title>
+    <title>OpenAutoGrowth</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <meta name="description" content="Closed-loop AI growth engine: content generation, smart execution, data analysis, and autonomous optimization.">
-    <link rel="stylesheet" href="style.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
     <div id="app">
+        <!-- ── AppShell: Navbar (rendered by src/ui/shell.js) ──────── -->
+        <nav id="app-navbar" aria-label="Main navigation"></nav>
 
-        <!-- ── Navbar ─────────────────────────────────────────── -->
-        <nav class="navbar">
-            <div class="logo">
-                <span class="logo-icon">🚀</span>
-                <span class="logo-text">OpenAutoGrowth</span>
-            </div>
-            <div class="nav-center">
-                <span class="system-version" data-i18n="nav_version">Multi-Agent · Closed-Loop · v0.0.1</span>
-            </div>
-            <div class="nav-right">
-                <div class="lang-switcher">
-                    <button id="btn-lang-zh" class="lang-btn">ZH</button>
-                    <button id="btn-lang-en" class="lang-btn">EN</button>
-                </div>
-                <span id="campaign-status-badge" class="campaign-badge" data-i18n="nav_no_campaign">NO CAMPAIGN</span>
-                <div class="nav-status">
-                    <span class="status-dot"></span>
-                    <span class="status-text" data-i18n="nav_agents_online">8 Agents Online</span>
-                </div>
-            </div>
-        </nav>
+        <!-- ── Router Outlet: pages render here ────────────────────── -->
+        <main id="app-outlet"></main>
 
-        <!-- ── Hero ───────────────────────────────────────────── -->
-        <main class="dashboard">
-            <header class="hero">
-                <h1 data-i18n="hero_title">AI 驱动的 <span class="gradient-text">增长闭环引擎</span></h1>
-                <p data-i18n="hero_subtitle">内容生成 &nbsp;·&nbsp; 智能投放 &nbsp;·&nbsp; 数据归因 &nbsp;·&nbsp; 自动优化</p>
-                <button id="btn-launch" class="btn primary hero-btn" data-i18n="btn_launch">
-                    🎯 &nbsp;Launch Campaign
-                </button>
-            </header>
-
-            <!-- ── Agentic Pipeline Neural Map (DAG) ──────────────── -->
-            <section class="pipeline-section">
-                <div class="pipeline-canvas-grid">
-                    
-                    <!-- Row 1 -->
-                    <div class="grid-cell"></div>
-                    <div class="grid-cell"></div>
-                    <div class="grid-cell">
-                        <div id="node-strategy" class="agent-neuron">
-                            <span class="neuron-icon">📈</span>
-                            <span class="neuron-label">Strategy</span>
-                        </div>
-                    </div>
-                    <div class="grid-cell"></div>
-                    <div class="grid-cell"></div>
-
-                    <!-- Row 2 -->
-                    <div class="grid-cell">
-                        <div id="node-orchestrator" class="agent-neuron central">
-                            <span class="neuron-icon">🧠</span>
-                            <span class="neuron-label">Orchestrator</span>
-                        </div>
-                    </div>
-                    <div class="grid-cell">
-                        <div id="node-planner" class="agent-neuron central">
-                            <span class="neuron-icon">🗺️</span>
-                            <span class="neuron-label">Planner</span>
-                        </div>
-                    </div>
-                    <div class="grid-cell">
-                        <div id="node-contentgen" class="agent-neuron">
-                            <span class="neuron-icon">📝</span>
-                            <span class="neuron-label">ContentGen</span>
-                        </div>
-                    </div>
-                    <div class="grid-cell">
-                        <div id="node-reviewer" class="agent-neuron gate">
-                            <span class="neuron-icon">⚖️</span>
-                            <span class="neuron-label">Reviewer</span>
-                        </div>
-                    </div>
-                    <div class="grid-cell">
-                        <div id="node-channelexec" class="agent-neuron central">
-                            <span class="neuron-icon">📡</span>
-                            <span class="neuron-label">Execution</span>
-                        </div>
-                    </div>
-
-                    <!-- Row 3 -->
-                    <div class="grid-cell"></div>
-                    <div class="grid-cell"></div>
-                    <div class="grid-cell">
-                        <div id="node-multimodal" class="agent-neuron">
-                            <span class="neuron-icon">🎨</span>
-                            <span class="neuron-label">Multimodal</span>
-                        </div>
-                    </div>
-                    <div class="grid-cell"></div>
-                    <div class="grid-cell">
-                        <div id="node-analysis" class="agent-neuron">
-                            <span class="neuron-icon">📊</span>
-                            <span class="neuron-label">Optimizer</span>
-                        </div>
-                    </div>
-
-                    <!-- SVG Connections Overlay (Full Size) -->
-                    <svg class="pipeline-svg-overlay" viewBox="0 0 1200 400" preserveAspectRatio="xMidYMid meet">
-                        <defs>
-                            <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-                                <feGaussianBlur stdDeviation="3" result="blur" />
-                                <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                            </filter>
-                        </defs>
-                        <!-- Precise Coordinates based on 5x3 grid (Centers: 120, 360, 600, 840, 1080) -->
-                        <path d="M 120 200 L 360 200" class="svg-edge" id="edge-1" />
-                        
-                        <path d="M 360 200 L 600 65"  class="svg-edge" id="edge-2-top" />
-                        <path d="M 360 200 L 600 200" class="svg-edge" id="edge-2-mid" />
-                        <path d="M 360 200 L 600 335" class="svg-edge" id="edge-2-bot" />
-                        
-                        <path d="M 600 65  L 840 200" class="svg-edge" id="edge-3-top" />
-                        <path d="M 600 200 L 840 200" class="svg-edge" id="edge-3-mid" />
-                        <path d="M 600 335 L 840 200" class="svg-edge" id="edge-3-bot" />
-                        
-                        <path d="M 840 200 L 1080 200"  class="svg-edge" id="edge-4" />
-                        <path d="M 1080 200 L 1080 335" class="svg-edge" id="edge-5" />
-                    </svg>
-                </div>
-            </section>
-
-            <!-- ── Agent Cards Grid ────────────────────────────── -->
-            <section class="grid-container">
-
-                <!-- 1. Content Generation -->
-                <div class="card" id="generation-card">
-                    <div class="card-header">
-                        <div class="card-icon gen">🎨</div>
-                        <h3 data-i18n="card_gen_title">Content Generation</h3>
-                    </div>
-                    <div class="card-body">
-                        <div class="stat-group">
-                            <span class="label" data-i18n="card_gen_label">Output Assets</span>
-                            <span class="value" id="gen-count">—</span>
-                        </div>
-                        <div class="progress-bar">
-                            <div class="progress" style="width: 75%"></div>
-                        </div>
-                        <p class="description" data-i18n="card_gen_desc">ContentGen + Multimodal agents produce A/B copy variants and visual assets in parallel.</p>
-                    </div>
-                    <div class="card-footer">
-                        <button id="btn-view-library" class="btn secondary" data-i18n="btn_view_library">View Library</button>
-                        <button id="btn-view-history" class="btn secondary" data-i18n="btn_history">History</button>
-                        <button id="btn-gen-new" class="btn primary" data-i18n="btn_gen_new">Generate New</button>
-                    </div>
-                </div>
-
-                <!-- 2. Smart Execution -->
-                <div class="card" id="execution-card">
-                    <div class="card-header">
-                        <div class="card-icon exec">📡</div>
-                        <h3 data-i18n="card_exec_title">Smart Execution</h3>
-                    </div>
-                    <div class="card-body">
-                        <div class="stat-group">
-                            <span class="label" data-i18n="card_exec_label">Reach Rate</span>
-                            <span class="value" id="exec-reach">—</span>
-                        </div>
-                        <div class="activity-feed" id="exec-feed">
-                            <div class="feed-item feed-placeholder" data-i18n="card_exec_waiting">Waiting for campaign...</div>
-                        </div>
-                    </div>
-                    <div class="card-footer">
-                        <button id="btn-channels" class="btn secondary" data-i18n="btn_channels">Channels</button>
-                        <button id="btn-exec" class="btn primary" data-i18n="btn_exec_batch">Execute Batch</button>
-                    </div>
-                </div>
-
-                <!-- 3. Data Analysis -->
-                <div class="card" id="analysis-card">
-                    <div class="card-header">
-                        <div class="card-icon analysis">📊</div>
-                        <h3 data-i18n="card_analysis_title">Data Analysis</h3>
-                    </div>
-                    <div class="card-body">
-                        <div class="chart-placeholder">
-                            <div class="bar" style="height: 40%"></div>
-                            <div class="bar" style="height: 60%"></div>
-                            <div class="bar" style="height: 55%"></div>
-                            <div class="bar" style="height: 70%"></div>
-                            <div class="bar" style="height: 45%"></div>
-                        </div>
-                        <div class="stat-group">
-                            <span class="label" data-i18n="card_analysis_label">ROI Growth</span>
-                            <span class="value positive" id="roi-value">—</span>
-                        </div>
-                    </div>
-                    <div class="card-footer">
-                        <button id="btn-export-data" class="btn secondary" data-i18n="btn_export_data">Export Data</button>
-                        <button id="btn-sync" class="btn primary" data-i18n="btn_sync_analytics">Sync Analytics</button>
-                    </div>
-                </div>
-
-                <!-- 4. Auto Optimization -->
-                <div class="card" id="optimization-card">
-                    <div class="card-header">
-                        <div class="card-icon opt">⚙️</div>
-                        <h3 data-i18n="card_opt_title">Auto Optimization</h3>
-                    </div>
-                    <div class="card-body">
-                        <div class="optimization-status">
-                            <div class="status-item">
-                                <span class="dot pulse"></span>
-                                <span id="opt-status-text" class="text" data-i18n="card_opt_standby">Rule Engine on standby...</span>
-                            </div>
-                        </div>
-                        <p class="description" data-i18n="card_opt_desc">
-                            A/B裁决 · 文案重写 · 预算再分配 · Lookalike 扩展 — 自动闭环优化。
-                        </p>
-                    </div>
-                    <div class="card-footer">
-                        <button id="btn-view-rules" class="btn secondary" data-i18n="btn_view_rules">View Rules</button>
-                        <button id="btn-optimize" class="btn primary" data-i18n="btn_run_optimizer">Run Optimizer</button>
-                    </div>
-                </div>
-
-            </section>
-
-            <!-- ── Activity Log ────────────────────────────────── -->
-            <section class="activity-log-section">
-                <div class="log-header">
-                    <h3 data-i18n="log_header">🔍 System Activity Log</h3>
-                    <span class="log-badge" data-i18n="log_badge_live">Live</span>
-                </div>
-                <div id="activity-log" class="activity-log">
-                    <div class="log-entry" data-i18n="log_booting" style="color:#94a3b8; border-left:2px solid #6366f1; padding-left:8px; font-size:0.8rem">
-                        System booting...
-                    </div>
-                </div>
-            </section>
-        </main>
-
-        <footer class="system-footer">
-            <p data-i18n="footer_text">&copy; 2026 OpenAutoGrowth · Multi-Agent Closed-Loop Growth Engine · Built by Antigravity AI</p>
-        </footer>
+        <!-- ── AppShell: Footer ────────────────────────────────────── -->
+        <footer id="app-footer"></footer>
     </div>
 
-    <!-- ── Launch Campaign Modal ────────────────────────────── -->
-    <!-- ── History Modal ────────────────────────────── -->
-    <div id="history-modal" class="modal">
-        <div class="modal-content" style="max-width: 1000px;">
-            <div class="modal-header">
-                <h3>📜 <span id="library-modal-title" data-i18n="modal_history_title">Article History</span></h3>
-                <button id="btn-close-history-modal" class="close-btn">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div id="history-list" class="history-grid">
-                    <!-- Dynamic Items -->
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button id="btn-close-history" class="btn secondary" data-i18n="btn_close">Close</button>
-            </div>
-        </div>
-    </div>
+    <!-- ══════════════════════════════════════════════════════════════
+         Global Modals (persist across route changes)
+         ══════════════════════════════════════════════════════════════ -->
 
-    <!-- ── Campaign History Modal ────────────────────────── -->
-    <div id="campaign-modal" class="modal">
-        <div class="modal-content" style="max-width: 1000px;">
-            <div class="modal-header">
-                <h3>📊 <span data-i18n="modal_campaign_history_title">Campaign History</span></h3>
-                <button id="btn-close-campaign-modal" class="close-btn">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div id="campaign-list" class="history-grid">
-                    <!-- Dynamic Items -->
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button id="btn-close-campaign" class="btn secondary" data-i18n="btn_close">Close</button>
-            </div>
-        </div>
-    </div>
-
+    <!-- ── Launch Campaign Modal ─────────────────────────────────── -->
     <div id="launch-modal" class="modal">
-        <div class="modal-content" style="max-width: 600px;">
+        <div class="modal-content">
             <div class="modal-header">
-                <h3>🚀 <span data-i18n="modal_launch_title">Create New Campaign</span></h3>
-                <button id="btn-close-launch-modal" class="close-btn">&times;</button>
+                <h3 data-i18n="modal_launch_title">Create New Campaign</h3>
+                <button id="btn-close-launch-modal" class="close-btn" aria-label="Close">&times;</button>
             </div>
             <div class="modal-body">
-                <!-- 0. Campaign Type Tabs -->
-                <div class="campaign-type-tabs">
-                    <button class="tab-btn active" data-type="ecom">📦 <span data-i18n="tab_ecom">Physical Product</span></button>
-                    <button class="tab-btn" data-type="software">💻 <span data-i18n="tab_software">Software/App</span></button>
-                    <button class="tab-btn" data-type="lead">📝 <span data-i18n="tab_lead">Lead Gen</span></button>
+                <!-- Campaign type tabs -->
+                <div class="campaign-type-tabs" role="tablist">
+                    <button class="tab-btn active" data-type="ecom"><span data-i18n="tab_ecom">Physical Product</span></button>
+                    <button class="tab-btn" data-type="software"><span data-i18n="tab_software">Software/App</span></button>
+                    <button class="tab-btn" data-type="lead"><span data-i18n="tab_lead">Lead Gen</span></button>
                 </div>
 
-                <!-- 1. URL & Description -->
+                <!-- URL + AI analyze -->
                 <div class="input-group">
-                    <label>🔗 <span id="label-url">Product URL</span></label>
-                    <div style="display: flex; gap: 8px;">
-                        <input type="url" id="promo-url-input" class="modal-input" style="flex: 1;" placeholder="https://amazon.com/dp/...">
-                        <button id="btn-analyze-url" class="btn secondary" style="white-space: nowrap; padding: 0 1rem; display: flex; align-items: center; gap: 4px;">
-                            <span id="analyze-icon">✨</span>
+                    <label><span id="label-url">Product URL</span></label>
+                    <div style="display:flex; gap:8px;">
+                        <input type="url" id="promo-url-input" class="modal-input" style="flex:1;" placeholder="https://amazon.com/dp/...">
+                        <button id="btn-analyze-url" class="btn btn-secondary" style="white-space:nowrap;">
+                            <span id="analyze-icon"></span>
                             <span data-i18n="btn_analyze">AI Analyze</span>
                         </button>
                     </div>
                 </div>
-                
-                <!-- 1.5 Target Location (Dynamic) -->
+
                 <div id="location-group" class="input-group">
-                    <label>🌍 <span data-i18n="label_location">Target Location</span></label>
+                    <label data-i18n="label_location">Target Location</label>
                     <select id="promo-location-select" class="modal-input">
                         <option value="US">United States (US)</option>
                         <option value="CN">China (CN)</option>
@@ -328,14 +62,13 @@
                 </div>
 
                 <div class="input-group">
-                    <label>📝 <span data-i18n="label_promo_desc">Campaign Description</span></label>
-                    <textarea id="promo-goal-input" class="modal-textarea" style="min-height: 60px;" placeholder="Briefly describe your campaign goals..."></textarea>
+                    <label data-i18n="label_promo_desc">Campaign Description</label>
+                    <textarea id="promo-goal-input" class="modal-textarea" placeholder="Briefly describe your campaign goals..."></textarea>
                 </div>
 
-                <!-- 2. Objective & Bid Strategy -->
-                <div class="input-row" style="display: flex; gap: 1rem;">
-                    <div class="input-group" style="flex: 1.5;">
-                        <label>🎯 <span data-i18n="label_promo_objective">Objective</span></label>
+                <div class="input-row">
+                    <div class="input-group" style="flex:1.5;">
+                        <label data-i18n="label_promo_objective">Objective</label>
                         <select id="promo-objective-select" class="modal-input">
                             <option value="growth">GitHub Stars / User Growth</option>
                             <option value="awareness">Brand Awareness</option>
@@ -343,37 +76,35 @@
                             <option value="traffic">Website Traffic</option>
                         </select>
                     </div>
-                    <div class="input-group" style="flex: 1;">
-                        <label>📊 <span data-i18n="label_promo_kpi">Target KPI</span></label>
-                        <div style="display: flex; align-items: center; gap: 4px;">
+                    <div class="input-group" style="flex:1;">
+                        <label data-i18n="label_promo_kpi">Target KPI</label>
+                        <div style="display:flex; align-items:center; gap:6px;">
                             <input type="number" id="promo-kpi-input" class="modal-input" value="3.0" step="0.1">
-                            <span id="kpi-unit" style="font-size: 0.8rem; color: #64748b;">ROAS</span>
+                            <span id="kpi-unit" style="font-size:12px; color: var(--text-tertiary);">ROAS</span>
                         </div>
                     </div>
                 </div>
 
-                <!-- 3. Budget & Timeline -->
-                <div class="input-row" style="display: flex; gap: 1rem;">
-                    <div class="input-group" style="flex: 1;">
-                        <label>💰 <span data-i18n="label_promo_budget">Total Budget (CNY)</span></label>
+                <div class="input-row">
+                    <div class="input-group" style="flex:1;">
+                        <label data-i18n="label_promo_budget">Total Budget (CNY)</label>
                         <input type="number" id="promo-budget-input" class="modal-input" value="10000" min="100">
                     </div>
-                    <div class="input-group" style="flex: 1;">
-                        <label>📅 <span data-i18n="label_promo_duration">Duration (Days)</span></label>
+                    <div class="input-group" style="flex:1;">
+                        <label data-i18n="label_promo_duration">Duration (Days)</label>
                         <input type="number" id="promo-duration-input" class="modal-input" value="7" min="1">
                     </div>
                 </div>
 
-                <!-- 4. Channels (Visual Grid) -->
                 <div class="input-group">
-                    <label>📡 <span data-i18n="label_promo_channels">Target Channels</span></label>
+                    <label data-i18n="label_promo_channels">Target Channels</label>
                     <div class="channel-grid">
                         <div class="channel-card active" data-channel="zhihu">
                             <span class="channel-icon">知</span>
                             <span class="channel-name">Zhihu</span>
                         </div>
                         <div class="channel-card" data-channel="tiktok">
-                            <span class="channel-icon">🎵</span>
+                            <span class="channel-icon">T</span>
                             <span class="channel-name">TikTok</span>
                         </div>
                         <div class="channel-card" data-channel="meta">
@@ -388,20 +119,52 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button id="btn-cancel-launch" class="btn secondary" data-i18n="btn_cancel">Cancel</button>
-                <button id="btn-confirm-launch" class="btn primary" style="padding: 0.8rem 2rem;">
-                    🚀 <span data-i18n="btn_launch_now">Launch Campaign</span>
+                <button id="btn-cancel-launch" class="btn btn-secondary" data-i18n="btn_cancel">Cancel</button>
+                <button id="btn-confirm-launch" class="btn btn-primary">
+                    <span data-i18n="btn_launch_now">Launch Campaign</span>
                 </button>
             </div>
         </div>
     </div>
 
-    <!-- ── Article Preview Modal ────────────────────────────── -->
+    <!-- ── History Modal ────────────────────────────────────────── -->
+    <div id="history-modal" class="modal">
+        <div class="modal-content" style="max-width:1000px;">
+            <div class="modal-header">
+                <h3><span id="library-modal-title" data-i18n="modal_history_title">Article History</span></h3>
+                <button id="btn-close-history-modal" class="close-btn" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="history-list" class="history-grid"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="btn-close-history" class="btn btn-secondary" data-i18n="btn_close">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Campaign History Modal ───────────────────────────────── -->
+    <div id="campaign-modal" class="modal">
+        <div class="modal-content" style="max-width:1000px;">
+            <div class="modal-header">
+                <h3><span data-i18n="modal_campaign_history_title">Campaign History</span></h3>
+                <button id="btn-close-campaign-modal" class="close-btn" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="campaign-list" class="history-grid"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="btn-close-campaign" class="btn btn-secondary" data-i18n="btn_close">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Article Preview Modal ────────────────────────────────── -->
     <div id="article-modal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>📝 <span data-i18n="modal_article_title">Preview Article</span></h3>
-                <button id="btn-close-modal" class="close-btn">&times;</button>
+                <h3><span data-i18n="modal_article_title">Preview Article</span></h3>
+                <button id="btn-close-modal" class="close-btn" aria-label="Close">&times;</button>
             </div>
             <div class="modal-body">
                 <div class="input-group">
@@ -410,12 +173,12 @@
                 </div>
                 <div class="input-group">
                     <label data-i18n="label_article_body">Content (Markdown)</label>
-                    <textarea id="article-body-input" class="modal-textarea"></textarea>
+                    <textarea id="article-body-input" class="modal-textarea" style="min-height:280px;"></textarea>
                 </div>
             </div>
             <div class="modal-footer">
-                <button id="btn-cancel-article" class="btn secondary" data-i18n="btn_cancel">Cancel</button>
-                <button id="btn-publish-article" class="btn primary" data-i18n="btn_publish">🚀 Publish to Zhihu</button>
+                <button id="btn-cancel-article" class="btn btn-secondary" data-i18n="btn_cancel">Cancel</button>
+                <button id="btn-publish-article" class="btn btn-primary" data-i18n="btn_publish">Publish to Zhihu</button>
             </div>
         </div>
     </div>

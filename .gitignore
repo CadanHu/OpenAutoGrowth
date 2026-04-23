@@ -4,10 +4,6 @@ dist/
 *.local
 .env
 .env.*
-
-# Ignore architecture docs for now
-docs/architecture/
-
 # Backend ignores
 backend/.venv/
 backend/__pycache__/

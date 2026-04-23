@@ -161,37 +161,56 @@ async def _call_llm(prompt: str, is_article: bool = False) -> list[dict]:
 async def content_gen_node(state: CampaignState) -> dict:
     """
     LangGraph node: generate A/B copy variants via Claude.
+    Incorporates feedback from Optimizer if in a loop.
     """
-    logger.info("content_gen_start", campaign_id=state["campaign_id"])
+    logger.info("content_gen_start", campaign_id=state["campaign_id"], loop=state.get("loop_count", 0))
 
     strategy = state.get("strategy") or {}
     channels = strategy.get("channel_plan", [{"channel": "tiktok"}, {"channel": "meta"}])
     channel_names = [c["channel"] for c in channels]
     is_technical_promo = any(ch in ["zhihu", "juejin", "csdn"] for ch in channel_names)
 
-    # Fetch comprehensive project context if a GitHub URL is present in goal
-    repo_context = ""
-    repo_url_match = re.search(r"https://github\.com/[^\s]+", state["goal"])
-    if repo_url_match:
-        repo_url = repo_url_match.group(0)
-        repo_context = await _get_github_context(repo_url)
+    # 1. Fetch historical context and optimization instructions
+    opt_actions = state.get("opt_actions") or []
+    rewrite_instructions = [
+        a["params"].get("suggestion") 
+        for a in opt_actions 
+        if a.get("type") == "REWRITE_COPY" and "params" in a
+    ]
+    report = state.get("report") or {}
+    metrics = report.get("metrics", {})
 
+    # 2. Build enriched prompt
     prompt = (
         f"Product goal: {state['goal']}\n"
         f"Target channels: {', '.join(channel_names)}\n"
         f"KPI target: {state.get('kpi', {}).get('metric', 'awareness')} = {state.get('kpi', {}).get('target', 'high')}\n"
     )
 
-    if repo_context:
-        prompt += f"\nProject Context:\n{repo_context}\n"
+    # Add Optimization Loop Context
+    if rewrite_instructions:
+        prompt += "\n### OPTIMIZATION FEEDBACK (CRITICAL) ###\n"
+        prompt += "This is a REWRITE based on previous poor performance.\n"
+        if metrics:
+            prompt += f"Previous Metrics: CTR={metrics.get('ctr')}, ROAS={metrics.get('roas')}\n"
+        prompt += "Follow these specific AI instructions for the new variants:\n"
+        for ins in rewrite_instructions:
+            prompt += f"- {ins}\n"
+        prompt += "Avoid the mistakes of the previous version.\n"
+
+    # Fetch comprehensive project context if a GitHub URL is present in goal
+    repo_url_match = re.search(r"https://github\.com/[^\s]+", state["goal"])
+    if repo_url_match:
+        repo_url = repo_url_match.group(0)
+        repo_context = await _get_github_context(repo_url)
+        if repo_context:
+            prompt += f"\nProject Context:\n{repo_context}\n"
 
     if is_technical_promo:
         prompt += (
             "\nGenerate ONE comprehensive technical article (variant_label: 'A'). "
             "Return a JSON array with exactly 1 variant.\n"
-            "CRITICAL RULE — title字数: 标题必须≤15个汉字，例如'DataPulse架构深度解析'(12字)是合法的，"
-            "'DataPulse v3.1深度解析：从多模型到知识图谱'(超过15字)是不合法的。"
-            "生成前请数清楚字数，超过15字必须重新起名。"
+            "CRITICAL RULE — title字数: 标题必须≤15个汉字。"
         )
     else:
         prompt += "\nGenerate 3 A/B/C copy variants optimized for these channels."

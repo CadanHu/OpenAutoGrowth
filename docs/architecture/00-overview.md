@@ -57,7 +57,7 @@ OpenAutoGrowth 是一个 **AI 驱动的增长自动化平台**，核心能力是
 
 | 模块 | 技术选型 | 理由 |
 | :--- | :--- | :--- |
-| **前端 Dashboard** | React + Vite + Vanilla CSS | 高性能构建，Premium UI |
+| **前端 Dashboard** | Vanilla JS + Vite + Design Tokens | 零框架依赖、静态托管友好；详见 [docs/frontend/](../frontend/00-overview.md) |
 | **Agent 编排引擎** | Node.js / Python (LangGraph 模式) | 支持异步、事件驱动、动态 DAG |
 | **长期记忆** | Pinecone + PostgreSQL | 向量语义检索 + 结构化历史 |
 | **Agent 通信** | Redis Pub/Sub (短期) → Kafka (规模化) | 解耦、可靠、可回溯 |
@@ -84,3 +84,9 @@ OpenAutoGrowth 是一个 **AI 驱动的增长自动化平台**，核心能力是
 - 在 Planner → Execution 之间设置"审批门"（Review Gate）；
 - 高预算活动（> $10,000）强制人工审批后才触发 ChannelExec；
 - Optimizer Agent 的预算调整幅度超过 50% 时报警并等待确认。
+
+### ADR-004: 前端为何独立成一套 SDD 规格？
+- 视觉/交互演进节奏与后端 Agent 不同，前端需要自己的规格源；
+- 每个 Agent 独立页面要求单一真源定义"Agent 元数据"（名字、色、描述），这是**前端关注**的组织方式；
+- 前后端契约通过 `docs/architecture/10-api-spec.md` 和 WebSocket 事件 Schema 保持同步；
+- 详见 [docs/frontend/00-overview.md](../frontend/00-overview.md)。

@@ -6,7 +6,7 @@
 
 ```
 docs/
-├── architecture/                       # 系统架构文档
+├── architecture/                       # 系统架构文档（后端 / 平台）
 │   ├── 00-overview.md                  # 总体架构概览与 ADR
 │   ├── 01-agent-design.md              # 8 个 Agent 的详细功能规范
 │   ├── 02-system-flow.md               # 核心业务链路建模（时序图）
@@ -16,6 +16,14 @@ docs/
 │   ├── 06-model-toolchain.md           # 模型工具链选型与成本估算
 │   ├── 07-data-flow-service-boundary.md # 数据流与服务边界划分
 │   └── 08-entity-state-flow.md         # 实体关系状态流转设计
+│
+├── frontend/                           # 前端架构与设计规格（SDD）
+│   ├── 00-overview.md                  # 前端架构概览与 ADR
+│   ├── 01-design-system.md             # 设计系统（色板/字体/间距/图标）
+│   ├── 02-information-architecture.md  # 信息架构与页面树
+│   ├── 03-routing.md                   # 路由机制规范
+│   ├── 04-hub-page-spec.md             # Hub 总览页规格
+│   └── 05-agent-page-template.md       # 单 Agent 页通用模板
 │
 └── business/                           # 业务建模文档
     ├── 01-domain-model.md              # DDD 领域建模（限界上下文/聚合根）
@@ -37,6 +45,17 @@ docs/
 | [06 工具链选型](./architecture/06-model-toolchain.md) | LLM/视觉/广告/数据 工具链，成本估算 |
 | [07 数据流边界](./architecture/07-data-flow-service-boundary.md) | 微服务拆分、事件 Schema、一致性策略 |
 | [08 状态流转](./architecture/08-entity-state-flow.md) | 跨实体联动状态变更矩阵 |
+
+### 🎨 前端文档（SDD）
+
+| 文档 | 核心内容 |
+| :--- | :--- |
+| [00 前端概览](./frontend/00-overview.md) | 前端四层架构、技术选型、前端 ADR |
+| [01 设计系统](./frontend/01-design-system.md) | 暖奶油色板（L0–L3）、字体、间距、阴影、图标规范 |
+| [02 信息架构](./frontend/02-information-architecture.md) | 页面树、路由表、导航、深链 |
+| [03 路由机制](./frontend/03-routing.md) | Hash Router 协议、Page 模块契约、生命周期 |
+| [04 Hub 页规格](./frontend/04-hub-page-spec.md) | 总览页详细规格（v0.1 交付） |
+| [05 Agent 页模板](./frontend/05-agent-page-template.md) | 单 Agent 工作台通用骨架 |
 
 ### 💼 业务文档
 

@@ -1,0 +1,121 @@
+/*
+ * OpenAutoGrowth — Design Tokens
+ * See: docs/frontend/01-design-system.md
+ * All components MUST use these tokens. No hard-coded colors / sizes.
+ */
+
+:root {
+  /* ── Background layers (cream → beige) ─────────────────────── */
+  --bg-L0: #FDFBF6;   /* page */
+  --bg-L1: #F8F3E9;   /* card / panel */
+  --bg-L2: #F5EEDC;   /* embedded: input, feed, code */
+  --bg-L3: #EDE4CE;   /* divider / navbar */
+
+  /* ── Text ──────────────────────────────────────────────────── */
+  --text-primary:   #2B2A26;
+  --text-secondary: #6B655A;
+  --text-tertiary:  #A8A090;
+  --text-inverse:   #FDFBF6;
+
+  /* ── Borders ──────────────────────────────────────────────── */
+  --border-subtle:  #EDE4CE;
+  --border-default: #E0D5BA;
+  --border-strong:  #8B7355;
+
+  /* ── Accent / Semantic ─────────────────────────────────────── */
+  --accent-primary:   #8B7355;   /* caramel brown */
+  --accent-secondary: #A68A64;
+  --accent-soft:      rgba(139, 115, 85, 0.08);
+  --accent-ring:      rgba(139, 115, 85, 0.22);
+
+  --success: #6B8E5A;  /* olive */
+  --warning: #C4894A;  /* amber */
+  --danger:  #B04A3E;  /* terracotta */
+  --info:    #5A7A8B;  /* foggy blue */
+
+  /* ── Agent identity colors ─────────────────────────────────── */
+  --agent-orchestrator: #8B7355;
+  --agent-planner:      #7B8B5A;
+  --agent-strategy:     #5A7A8B;
+  --agent-contentgen:   #A68A64;
+  --agent-multimodal:   #B5916B;
+  --agent-channelexec:  #7A6B8B;
+  --agent-analysis:     #5A8B7B;
+  --agent-optimizer:    #C4894A;
+
+  /* ── Typography ────────────────────────────────────────────── */
+  --font-serif: 'Fraunces', 'Noto Serif SC', Georgia, serif;
+  --font-sans:  'Inter', 'PingFang SC', 'Helvetica Neue', system-ui, sans-serif;
+  --font-mono:  'JetBrains Mono', 'SF Mono', Menlo, monospace;
+
+  --fs-display:  48px;
+  --fs-h1:       32px;
+  --fs-h2:       24px;
+  --fs-h3:       18px;
+  --fs-body:     15px;
+  --fs-sm:       13px;
+  --fs-xs:       11px;
+
+  --lh-display: 1.1;
+  --lh-heading: 1.25;
+  --lh-body:    1.6;
+
+  --fw-regular:  400;
+  --fw-medium:   500;
+  --fw-semibold: 600;
+  --fw-bold:     700;
+
+  /* ── Spacing (4px base) ────────────────────────────────────── */
+  --sp-1:  4px;
+  --sp-2:  8px;
+  --sp-3:  12px;
+  --sp-4:  16px;
+  --sp-5:  24px;
+  --sp-6:  32px;
+  --sp-7:  48px;
+  --sp-8:  64px;
+
+  /* ── Radius ────────────────────────────────────────────────── */
+  --radius-sm:   8px;
+  --radius-md:   12px;
+  --radius-lg:   20px;
+  --radius-xl:   28px;
+  --radius-full: 999px;
+
+  /* ── Shadow (warm brown, never pure black) ────────────────── */
+  --shadow-xs:    0 1px 2px  rgba(139, 115, 85, 0.04);
+  --shadow-sm:    0 2px 8px  rgba(139, 115, 85, 0.06);
+  --shadow-md:    0 8px 24px rgba(139, 115, 85, 0.08);
+  --shadow-lg:    0 16px 48px rgba(139, 115, 85, 0.12);
+  --shadow-inset: inset 0 1px 2px rgba(139, 115, 85, 0.06);
+  --shadow-ring:  0 0 0 3px var(--accent-ring);
+
+  /* ── Icons ─────────────────────────────────────────────────── */
+  --icon-sm: 16px;
+  --icon-md: 20px;
+  --icon-lg: 24px;
+  --icon-stroke: 1.5px;
+
+  /* ── Motion ────────────────────────────────────────────────── */
+  --ease-organic: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-smooth:  cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring:  cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --dur-fast: 180ms;
+  --dur-base: 280ms;
+  --dur-slow: 420ms;
+
+  /* ── Layout ────────────────────────────────────────────────── */
+  --nav-height: 68px;
+  --page-max-width: 1360px;
+  --page-gutter: var(--sp-7);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur-base: 0ms;
+    --dur-slow: 0ms;
+  }
+  * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+}
