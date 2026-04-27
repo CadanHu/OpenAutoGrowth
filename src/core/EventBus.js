@@ -5,6 +5,7 @@
 export class EventBus {
     constructor() {
         this.subscribers = new Map(); // Map<eventType, Set<handler>>
+        this.wildcardHandlers = new Set(); // subscribe('*', ...)
         this.history = [];
     }
 
@@ -29,7 +30,8 @@ export class EventBus {
         this.history.push(event);
 
         const handlers = this.subscribers.get(eventType) || new Set();
-        handlers.forEach(handler => {
+        const all = [...handlers, ...this.wildcardHandlers];
+        all.forEach(handler => {
             // 异步执行，不阻塞发布者
             Promise.resolve().then(() => handler(event)).catch(err => {
                 console.error(`[EventBus] Handler error for ${eventType}:`, err);
@@ -40,15 +42,17 @@ export class EventBus {
     }
 
     /**
-     * 订阅事件
+     * 订阅事件。eventType 传 '*' 订阅所有事件。
      */
     subscribe(eventType, handler) {
+        if (eventType === '*') {
+            this.wildcardHandlers.add(handler);
+            return () => this.wildcardHandlers.delete(handler);
+        }
         if (!this.subscribers.has(eventType)) {
             this.subscribers.set(eventType, new Set());
         }
         this.subscribers.get(eventType).add(handler);
-
-        // 返回取消订阅函数
         return () => this.subscribers.get(eventType)?.delete(handler);
     }
 

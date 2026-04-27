@@ -101,7 +101,7 @@ function renderLastRunSummary(event) {
 
 // ── Tab: Config (local-only in v0.0.2) ──────────────────────────────
 const DEFAULT_CONFIG = {
-  model: 'claude-3-5-sonnet',
+  model: 'claude-4-7-opus',
   ab_variants: 3,
   tone: 'energetic',
   max_words: 120,
@@ -123,9 +123,10 @@ function renderConfig(panel) {
       <div class="form-row">
         <label>${t('cfg_model', 'LLM Model')}</label>
         <select name="model" class="modal-input">
-          <option value="claude-3-5-sonnet" ${cfg.model === 'claude-3-5-sonnet' ? 'selected' : ''}>Claude 3.5 Sonnet</option>
-          <option value="gpt-4o" ${cfg.model === 'gpt-4o' ? 'selected' : ''}>GPT-4o</option>
-          <option value="gemini-3" ${cfg.model === 'gemini-3' ? 'selected' : ''}>Gemini 3</option>
+          <option value="claude-4-7-opus" ${cfg.model === 'claude-4-7-opus' ? 'selected' : ''}>Claude 4.7 Opus</option>
+          <option value="gpt-5-5" ${cfg.model === 'gpt-5-5' ? 'selected' : ''}>GPT-5.5</option>
+          <option value="gemini-4-ultra" ${cfg.model === 'gemini-4-ultra' ? 'selected' : ''}>Gemini 4 Ultra</option>
+          <option value="deepseek-v4" ${cfg.model === 'deepseek-v4' ? 'selected' : ''}>DeepSeek V4</option>
         </select>
       </div>
       <div class="form-row">
@@ -362,12 +363,13 @@ let frame = null;
 export default {
   titleKey: 'page_agent_placeholder_title',
 
-  async mount(outlet) {
+  async mount(outlet, ctx) {
     const agent = AGENTS[AGENT_ID];
     if (!agent) { router.navigate('/'); return; }
 
     frame = createAgentFrame({
       agent,
+      defaultTabId: ctx?.query?.tab,
       tabs: [
         { id: 'overview',   labelKey: 'agent_tab_overview',   label: 'Overview',   icon: 'activity',   render: renderOverview },
         { id: 'playground', labelKey: 'agent_tab_playground', label: 'Playground', icon: 'sparkles',   render: renderPlayground },

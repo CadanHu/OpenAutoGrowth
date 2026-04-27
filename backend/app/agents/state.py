@@ -2,13 +2,36 @@
 CampaignState — LangGraph shared state TypedDict.
 Every agent node reads from and writes partial updates to this state.
 """
+import json
 from typing import Annotated, Any, Optional
 from typing_extensions import TypedDict
 
 
-def _merge_list(a: list, b: list) -> list:
-    """Reducer: append new items without duplicates."""
+def _merge_str_list(a: list[str], b: list[str]) -> list[str]:
+    """Reducer for hashable items (strings). Order-preserving dedup."""
     return list(dict.fromkeys(a + b))
+
+
+def _merge_dict_list(a: list[dict], b: list[dict]) -> list[dict]:
+    """
+    Reducer for unhashable items (dicts). dict.fromkeys would raise
+    TypeError, so we dedup by JSON-canonical form. Two structurally
+    identical errors won't double-log; structurally distinct ones — even
+    if they share the same 'node' field — are kept.
+    """
+    seen: set[str] = set()
+    out: list[dict] = []
+    for item in a + b:
+        try:
+            key = json.dumps(item, sort_keys=True, default=str)
+        except (TypeError, ValueError):
+            # Un-serializable payloads still get appended (no dedup).
+            out.append(item)
+            continue
+        if key not in seen:
+            seen.add(key)
+            out.append(item)
+    return out
 
 
 class CampaignState(TypedDict):
@@ -41,5 +64,5 @@ class CampaignState(TypedDict):
     # ── Control flow ───────────────────────────────────────────────
     status:        str                       # current campaign status
     loop_count:    int                       # optimization loop counter
-    errors:        Annotated[list[dict], _merge_list]  # accumulated node errors
-    completed_tasks: Annotated[list[str], _merge_list] # node names finished
+    errors:        Annotated[list[dict], _merge_dict_list]  # accumulated node errors
+    completed_tasks: Annotated[list[str], _merge_str_list]   # node names finished

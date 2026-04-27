@@ -2,6 +2,7 @@
 EventBus — Redis Pub/Sub backed event bus.
 Replaces the in-memory EventBus.js for cross-process, cross-client broadcasting.
 """
+import asyncio
 import json
 from collections.abc import Callable, Coroutine
 from datetime import datetime, timezone
@@ -43,17 +44,60 @@ class EventBus:
         self._redis: aioredis.Redis | None = None
         self._pubsub: aioredis.client.PubSub | None = None
         self._handlers: dict[str, set[Callable]] = {}
+        self._reader_task: asyncio.Task | None = None
 
     async def connect(self):
         self._redis = aioredis.from_url(settings.redis_url, decode_responses=True)
         self._pubsub = self._redis.pubsub()
+        # redis-py's async PubSub does not auto-drive the message loop; if we
+        # only call `pubsub.subscribe(**{channel: handler})` the handlers
+        # never fire because nobody reads from the connection. Spawn a
+        # background reader that polls and dispatches.
+        self._reader_task = asyncio.create_task(self._reader_loop())
         logger.info("event_bus_connected", url=settings.redis_url)
 
     async def disconnect(self):
+        if self._reader_task:
+            self._reader_task.cancel()
+            try:
+                await self._reader_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            self._reader_task = None
         if self._pubsub:
             await self._pubsub.close()
         if self._redis:
             await self._redis.aclose()
+
+    async def _reader_loop(self):
+        """Drive PubSub: poll messages, dispatch to per-channel handlers."""
+        while True:
+            try:
+                if not self._pubsub or not self._pubsub.subscribed:
+                    await asyncio.sleep(0.05)
+                    continue
+                msg = await self._pubsub.get_message(
+                    ignore_subscribe_messages=True,
+                    timeout=1.0,
+                )
+                if not msg:
+                    continue
+                channel = msg.get("channel")
+                data = msg.get("data")
+                try:
+                    parsed = json.loads(data) if isinstance(data, str) else data
+                except json.JSONDecodeError:
+                    continue
+                for handler in list(self._handlers.get(channel, [])):
+                    try:
+                        await handler(parsed)
+                    except Exception as exc:
+                        logger.warning("event_bus_handler_error", channel=channel, error=str(exc))
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning("event_bus_reader_error", error=str(exc))
+                await asyncio.sleep(0.5)
 
     async def publish(self, event_type: str, payload: dict, campaign_id: str | None = None):
         """Publish a domain event to Redis."""
@@ -91,9 +135,10 @@ class EventBus:
         if channel not in self._handlers:
             self._handlers[channel] = set()
             if self._pubsub:
-                await self._pubsub.subscribe(
-                    **{channel: self._dispatch_factory(channel)}
-                )
+                # Subscribe by channel name only. Dispatch happens in
+                # _reader_loop via self._handlers — registering a per-channel
+                # handler dict here is redundant and would fight the loop.
+                await self._pubsub.subscribe(channel)
 
         self._handlers[channel].add(callback)
 

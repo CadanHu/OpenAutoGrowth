@@ -54,7 +54,7 @@ export class ContentGenAgent {
                 title:     `深入浅出 ${product?.name || '开源项目'}：重构企业级数据分析工作流`,
                 body:      `# ${product?.name || 'DataPulse'} 技术解析\n\n在现代数据驱动的商业环境中，我们需要更智能的工具。${product?.name} 正是为此而生。\n\n## 核心特性\n- ${product?.USP?.join('\n- ')}\n\n## 为什么选择 ${product?.name}？\n因为它不仅是一个工具，更是一个完整的生态。`,
                 channel:   'zhihu',
-                llm_model: 'claude-3-5-sonnet-mock',
+                llm_model: 'claude-4-7-opus-mock',
             }];
         }
 
@@ -72,7 +72,7 @@ export class ContentGenAgent {
             cta:       ['免费试用', '立即体验', '查看案例'][i] || '了解更多',
             tone,
             word_count: 45 + Math.floor(Math.random() * 30),
-            llm_model: 'claude-3-5-sonnet-mock',
+            llm_model: 'claude-4-7-opus-mock',
         }));
     }
 

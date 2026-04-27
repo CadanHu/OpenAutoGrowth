@@ -81,8 +81,6 @@ export const AGENTS = {
     color: 'var(--agent-analysis)',
     icon: 'bar-chart',
     layer: 'feedback',
-    // NB: current DOM id is 'node-analysis' for the Optimizer slot (legacy).
-    // Analysis shares that node visually; spec §3.3 tracks the rename TODO.
     nodeId: 'node-analysis',
   },
   optimizer: {

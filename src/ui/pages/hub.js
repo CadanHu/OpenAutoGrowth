@@ -34,8 +34,8 @@ const PIPELINE_STATE = {
   EXECUTING:  { nodes: ['node-orchestrator','node-planner','node-strategy','node-contentgen','node-multimodal','node-reviewer','node-channelexec'], edges: ['edge-1', ...PRODUCTION_EDGES, ...REVIEW_EDGES, 'edge-4'] },
   DEPLOYED:   { nodes: ['node-orchestrator','node-planner','node-strategy','node-contentgen','node-multimodal','node-reviewer','node-channelexec'], edges: ['edge-1', ...PRODUCTION_EDGES, ...REVIEW_EDGES, 'edge-4'] },
   ANALYZING:  { nodes: ['node-orchestrator','node-planner','node-strategy','node-contentgen','node-multimodal','node-reviewer','node-channelexec','node-analysis'], edges: ['edge-1', ...PRODUCTION_EDGES, ...REVIEW_EDGES, 'edge-4', 'edge-5'] },
-  OPTIMIZING: { nodes: ['node-orchestrator','node-planner','node-strategy','node-contentgen','node-multimodal','node-reviewer','node-channelexec','node-analysis'], edges: ['edge-1', ...PRODUCTION_EDGES, ...REVIEW_EDGES, 'edge-4', 'edge-5'] },
-  COMPLETED:  { nodes: ['node-orchestrator','node-planner','node-strategy','node-contentgen','node-multimodal','node-reviewer','node-channelexec','node-analysis'], edges: ['edge-1', ...PRODUCTION_EDGES, ...REVIEW_EDGES, 'edge-4', 'edge-5'] },
+  OPTIMIZING: { nodes: ['node-orchestrator','node-planner','node-strategy','node-contentgen','node-multimodal','node-reviewer','node-channelexec','node-analysis','node-optimizer'], edges: ['edge-1', ...PRODUCTION_EDGES, ...REVIEW_EDGES, 'edge-4', 'edge-5', 'edge-6'] },
+  COMPLETED:  { nodes: ['node-orchestrator','node-planner','node-strategy','node-contentgen','node-multimodal','node-reviewer','node-channelexec','node-analysis','node-optimizer'], edges: ['edge-1', ...PRODUCTION_EDGES, ...REVIEW_EDGES, 'edge-4', 'edge-5', 'edge-6'] },
 };
 
 // ══════════════════════════════════════════════════════════════════
@@ -122,10 +122,10 @@ function renderCanvas() {
   };
 
   const reviewerNode = `
-    <div id="node-reviewer" class="agent-neuron gate" aria-label="Review gate" style="--neuron-color: var(--warning)">
+    <button id="node-reviewer" class="agent-neuron gate" aria-label="${i18n.t('reviewer_aria') || 'Review gate — open Orchestrator FSM'}" style="--neuron-color: var(--warning)">
       <span class="neuron-icon">${icon('check', 'md')}</span>
-      <span class="neuron-label">Review</span>
-    </div>`;
+      <span class="neuron-label">${i18n.t('reviewer_label') || 'Review'}</span>
+    </button>`;
 
   return `
     <div class="pipeline-canvas-grid">
@@ -147,8 +147,8 @@ function renderCanvas() {
       <div class="grid-cell"></div>
       <div class="grid-cell"></div>
       <div class="grid-cell">${node('node-multimodal', 'multimodal')}</div>
-      <div class="grid-cell"></div>
-      <div class="grid-cell">${node('node-analysis', 'optimizer')}</div>
+      <div class="grid-cell">${node('node-analysis', 'analysis')}</div>
+      <div class="grid-cell">${node('node-optimizer', 'optimizer')}</div>
 
       <svg class="pipeline-svg-overlay" viewBox="0 0 1200 400" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
         <path d="M 120 200 L 360 200" class="svg-edge" id="edge-1" />
@@ -158,8 +158,9 @@ function renderCanvas() {
         <path d="M 600 65  L 840 200" class="svg-edge" id="edge-3-top" />
         <path d="M 600 200 L 840 200" class="svg-edge" id="edge-3-mid" />
         <path d="M 600 335 L 840 200" class="svg-edge" id="edge-3-bot" />
-        <path d="M 840 200 L 1080 200"  class="svg-edge" id="edge-4" />
-        <path d="M 1080 200 L 1080 335" class="svg-edge" id="edge-5" />
+        <path d="M 840 200 L 1080 200" class="svg-edge" id="edge-4" />
+        <path d="M 1080 200 L 840 335" class="svg-edge" id="edge-5" />
+        <path d="M 840 335 L 1080 335" class="svg-edge" id="edge-6" />
       </svg>
     </div>`;
 }
@@ -192,7 +193,8 @@ class Hub {
     this.unsubscribers = [];
     this.activeCampaignId = null;
     this.lastReviewStatus = null;
-    this.logLines = 0;
+    this.logHistory = []; // 内存持久化日志
+    this.currentStatus = 'IDLE'; // 内存持久化状态
     this._pollTimer = null;
     this._boundBtnLaunch = null;
     this._boundAnalyze = null;
@@ -206,9 +208,22 @@ class Hub {
     this._bindCanvasNodes();
     this._subscribeEvents();
     this._startPolling();
-    this._updatePipeline('IDLE');
+    
+    // 恢复之前的状态
+    this._updatePipeline(this.currentStatus);
+    if (this.activeCampaignId) {
+      this._updateStripState(this.currentStatus);
+    }
 
-    this.log(i18n.t('status_online'), 'success');
+    // 恢复日志历史
+    const logEl = document.getElementById('activity-log');
+    if (logEl) {
+      this.logHistory.forEach(line => logEl.appendChild(line));
+    }
+
+    if (this.logHistory.length === 0) {
+      this.log(i18n.t('status_online'), 'success');
+    }
   }
 
   unmount() {
@@ -220,6 +235,10 @@ class Hub {
 
     this._boundNodes.forEach(({ el, fn }) => el?.removeEventListener('click', fn));
     this._boundNodes = [];
+    
+    // 清除 DOM 引用但保留日志对象
+    const logEl = document.getElementById('activity-log');
+    if (logEl) logEl.innerHTML = ''; 
   }
 
   // ── Binding ──────────────────────────────────────────────────
@@ -241,6 +260,13 @@ class Hub {
       el.addEventListener('click', fn);
       this._boundNodes.push({ el, fn });
     });
+    // Review gate is not an agent — open Orchestrator FSM where review state lives.
+    const reviewer = document.getElementById('node-reviewer');
+    if (reviewer) {
+      const fn = () => router.navigate('/agents/orchestrator', { tab: 'fsm' });
+      reviewer.addEventListener('click', fn);
+      this._boundNodes.push({ el: reviewer, fn });
+    }
   }
 
   // ── Event subscriptions ─────────────────────────────────────
@@ -254,6 +280,7 @@ class Hub {
     sub('StatusChanged', ({ payload: { old_status, new_status }, campaign_id }) => {
       this.log(i18n.t('log_campaign_status_change', { id: campaign_id?.slice(0,8), old: old_status, new: new_status }), 'info');
       this.activeCampaignId = campaign_id || this.activeCampaignId;
+      this.currentStatus = new_status;
       this._updateStripState(new_status);
       this._updateCampaignBadge(new_status);
       this._updatePipeline(new_status);
@@ -324,6 +351,7 @@ class Hub {
 
   _updatePipeline(status) {
     const current = PIPELINE_STATE[status] || PIPELINE_STATE.IDLE;
+    this.currentStatus = status;
 
     document.querySelectorAll('.agent-neuron, .svg-edge').forEach(el => {
       el.classList.remove('active', 'working');
@@ -382,15 +410,19 @@ class Hub {
 
   log(message, type = 'info') {
     const logEl = document.getElementById('activity-log');
-    if (!logEl) return;
     const line = document.createElement('div');
     line.className = `log-entry log-${type}`;
     line.innerHTML = `
       <span class="log-time">${new Date().toLocaleTimeString()}</span>
       <span class="log-msg">${message}</span>
     `;
-    logEl.prepend(line);
-    if (++this.logLines > 40) logEl.lastChild?.remove();
+    
+    this.logHistory.unshift(line);
+    if (this.logHistory.length > 40) this.logHistory.pop();
+    
+    if (logEl) {
+      logEl.prepend(line);
+    }
   }
 
   // ── Launch modal (lives in index.html as a global overlay) ──
@@ -616,17 +648,17 @@ class Hub {
   }
 }
 
+// 单例持有状态，避免切页丢失日志和动画进度
+const hubInstance = new Hub();
+
 export default {
   titleKey: 'page_hub_title',
-  _instance: null,
 
   async mount(outlet, ctx) {
-    this._instance = new Hub();
-    await this._instance.mount(outlet, ctx);
+    await hubInstance.mount(outlet, ctx);
   },
 
   unmount() {
-    this._instance?.unmount();
-    this._instance = null;
+    hubInstance.unmount();
   },
 };

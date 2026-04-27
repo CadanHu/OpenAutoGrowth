@@ -210,7 +210,7 @@ MCP_TOOLS = [
 ```python
 # ContentGenAgent 节点调用示意
 response = await anthropic_client.messages.create(
-    model="claude-sonnet-4-6",
+    model="claude-4-opus-202602",
     tools=MCP_TOOLS,            # 注入工具定义
     messages=[
         { "role": "user", "content": prompt }

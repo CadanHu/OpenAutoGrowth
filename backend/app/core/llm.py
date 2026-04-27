@@ -23,21 +23,57 @@ class LLMClient:
         model: Optional[str] = None,
         max_tokens: Optional[int] = None
     ) -> str:
-        # Determine provider: Prioritize Gemini
-        if not provider:
-            if settings.gemini_api_key:
-                provider = "gemini"
-            elif settings.deepseek_api_key:
-                provider = "deepseek"
-            elif settings.qwen_api_key:
-                provider = "qwen"
-            elif settings.zhipu_api_key:
-                provider = "zhipu"
-            elif settings.anthropic_api_key:
-                provider = "anthropic"
-            else:
-                raise ValueError("No LLM provider configured")
+        """
+        Run a chat completion against the preferred provider chain.
 
+        If `provider` is explicit, that provider is used as-is (no fallback —
+        the caller asked for it specifically). Otherwise, walks the configured
+        chain `gemini → deepseek → qwen → zhipu → anthropic`, skipping
+        providers without keys, and falls through to the next on any failure
+        (auth, quota, geo-block, timeout, etc.). Raises only if every
+        configured provider fails.
+        """
+        if provider:
+            return await self._call_provider(provider, messages, system, model, max_tokens)
+
+        chain = []
+        if settings.gemini_api_key:    chain.append("gemini")
+        if settings.deepseek_api_key:  chain.append("deepseek")
+        if settings.qwen_api_key:      chain.append("qwen")
+        if settings.zhipu_api_key:     chain.append("zhipu")
+        if settings.anthropic_api_key: chain.append("anthropic")
+        if not chain:
+            raise ValueError("No LLM provider configured")
+
+        last_error: Optional[Exception] = None
+        for idx, prov in enumerate(chain):
+            try:
+                result = await self._call_provider(prov, messages, system, model, max_tokens)
+                if idx > 0:
+                    logger.warning(
+                        "llm_fallback_succeeded",
+                        used=prov,
+                        skipped=chain[:idx],
+                    )
+                return result
+            except Exception as exc:
+                # Catch-all is intentional: any failure from a provider
+                # (HTTP 4xx/5xx, timeouts, SDK errors, JSON shape errors)
+                # should let the next provider try. Programming bugs here
+                # will still surface — they re-raise after the chain ends.
+                logger.warning(
+                    "llm_provider_failed",
+                    provider=prov,
+                    error_type=type(exc).__name__,
+                    error=str(exc)[:300],
+                )
+                last_error = exc
+
+        raise RuntimeError(
+            f"All LLM providers failed ({chain}). Last error: {last_error}"
+        ) from last_error
+
+    async def _call_provider(self, provider, messages, system, model, max_tokens):
         if provider == "anthropic":
             return await self._anthropic_completion(messages, system, model, max_tokens)
         elif provider == "deepseek":
@@ -47,7 +83,7 @@ class LLMClient:
                 messages,
                 system,
                 model or settings.deepseek_model,
-                max_tokens
+                max_tokens,
             )
         elif provider == "qwen":
             return await self._openai_compatible_completion(
@@ -56,7 +92,7 @@ class LLMClient:
                 messages,
                 system,
                 model or settings.qwen_model,
-                max_tokens
+                max_tokens,
             )
         elif provider == "zhipu":
             return await self._openai_compatible_completion(
@@ -65,18 +101,16 @@ class LLMClient:
                 messages,
                 system,
                 model or settings.zhipu_model,
-                max_tokens
+                max_tokens,
             )
         elif provider == "gemini":
-            # Gemini OpenAI-compatible endpoint
-            # Note: Using v1beta for early access models like 2.5/3.1
             return await self._openai_compatible_completion(
                 "https://generativelanguage.googleapis.com/v1beta/openai",
                 settings.gemini_api_key,
                 messages,
                 system,
                 model or settings.gemini_model,
-                max_tokens
+                max_tokens,
             )
         else:
             raise ValueError(f"Unsupported provider: {provider}")

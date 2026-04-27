@@ -6,7 +6,6 @@ Output: state.review_result (APPROVED/REJECTED), state.review_feedback
 """
 import json
 import structlog
-from app.config import settings
 from app.core.llm import llm_client
 from .state import CampaignState
 
@@ -38,8 +37,6 @@ async def reviewer_node(state: CampaignState) -> dict:
         raw_response = await llm_client.chat_completion(
             system="You are a strict content auditor. Output ONLY valid JSON.",
             messages=[{"role": "user", "content": prompt}],
-            provider="gemini", # Use Gemini 1.5 Pro for auditing
-            model=settings.gemini_model
         )
         
         # Simple JSON extraction

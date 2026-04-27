@@ -23,7 +23,10 @@ docs/
 │   ├── 02-information-architecture.md  # 信息架构与页面树
 │   ├── 03-routing.md                   # 路由机制规范
 │   ├── 04-hub-page-spec.md             # Hub 总览页规格
-│   └── 05-agent-page-template.md       # 单 Agent 页通用模板
+│   ├── 05-agent-page-template.md       # 单 Agent 页通用模板
+│   ├── 06-planner-page-spec.md         # Planner 页规格（DAG 预览）
+│   ├── 07-analysis-page-spec.md        # Analysis 页规格（归因模型选择器）
+│   └── 08-strategy-page-spec.md        # Strategy 页规格（What-If 推演）
 │
 └── business/                           # 业务建模文档
     ├── 01-domain-model.md              # DDD 领域建模（限界上下文/聚合根）
@@ -56,6 +59,9 @@ docs/
 | [03 路由机制](./frontend/03-routing.md) | Hash Router 协议、Page 模块契约、生命周期 |
 | [04 Hub 页规格](./frontend/04-hub-page-spec.md) | 总览页详细规格（v0.1 交付） |
 | [05 Agent 页模板](./frontend/05-agent-page-template.md) | 单 Agent 工作台通用骨架 |
+| [06 Planner 页规格](./frontend/06-planner-page-spec.md) | DAG 预览与任务分解调试台（v0.0.2） |
+| [07 Analysis 页规格](./frontend/07-analysis-page-spec.md) | 绩效报告 + 归因模型选择器（v0.0.2） |
+| [08 Strategy 页规格](./frontend/08-strategy-page-spec.md) | 渠道分配 + What-If 推演（v0.0.2） |
 
 ### 💼 业务文档
 
@@ -63,3 +69,16 @@ docs/
 | :--- | :--- |
 | [01 领域建模](./business/01-domain-model.md) | DDD 五大限界上下文、聚合根、领域事件 |
 | [02 实体关系](./business/02-entity-relations.md) | ER 图、9 张核心表字段规范、业务规则 |
+
+---
+
+## 🐛 已知问题 / Backlog
+
+| ID | 范围 | 描述 | 状态 |
+| :--- | :--- | :--- | :--- |
+| KI-001 | backend | `planner_node` 调 LLM 失败时 silently `return {"errors": [...]}` 并让 graph 继续往下，但下游节点拿不到 plan。应该让图直接 END 或路由到一个明确的失败态。 | open — 见 `backend/app/agents/planner.py:116-122` |
+| KI-002 | backend / 配置 | `LLMClient` 优先级 `gemini → deepseek → ...`，`.env` 中 GEMINI_API_KEY 失效（403）时整个管道阻塞。建议加健康探测，或允许显式指定 provider。 | open — 见 `backend/app/core/llm.py:28-36` |
+| KI-003 | frontend | ✅ Tab 状态进 URL `?tab=<id>`，浏览器回退恢复正确 Tab。表单内容仍会丢（受重挂载影响），见 KI-004。 | resolved — Bug 1，方案 A 已交付 |
+| KI-004 | frontend | i18n 切换通过整页重挂载实现，因此页内已输入的表单 / 已展开的 Run 行会被清空。修复需要先做 KI-003 + sessionStorage 持久化。 | open — Bug 2 修复的副作用，可接受 |
+| KI-FIX-A | backend | ✅ `state.py` reducer 用 `dict.fromkeys` 去重 dict 报 `unhashable type: 'dict'`。 | resolved — `_merge_str_list` / `_merge_dict_list` 拆分 |
+| KI-FIX-B | frontend | ✅ 后端 EventBus（Redis Pub/Sub）与浏览器 EventBus 不通，agent 页看不到后端事件。 | resolved — `wsBroadcaster` 镜像到 `globalEventBus` |

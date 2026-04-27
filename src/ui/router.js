@@ -25,6 +25,10 @@ class HashRouter {
     this.current = null;
     this.outlet = null;
     this._onHashChange = this._resolve.bind(this);
+    // Page bodies render text via i18n.t() at mount time and never re-translate.
+    // When the user toggles locale, re-mount the current route so the new
+    // language paints everywhere — not just the navbar/footer that subscribe.
+    this._onLanguageChanged = this._resolve.bind(this);
   }
 
   setOutlet(el) { this.outlet = el; }
@@ -40,11 +44,13 @@ class HashRouter {
 
   start() {
     window.addEventListener('hashchange', this._onHashChange);
+    document.addEventListener('languageChanged', this._onLanguageChanged);
     this._resolve();
   }
 
   stop() {
     window.removeEventListener('hashchange', this._onHashChange);
+    document.removeEventListener('languageChanged', this._onLanguageChanged);
   }
 
   navigate(path, query) {

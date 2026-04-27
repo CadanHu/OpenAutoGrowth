@@ -1,7 +1,15 @@
 /**
  * WSBroadcaster — 对接后端真实 WebSocket (:9393)
  * 替换原浏览器内 EventBus 回调模拟层。
+ *
+ * Bridge contract: every server message also republishes into the in-browser
+ * globalEventBus, so agent pages reading from `eventBus.history` (e.g.
+ * Planner DAG) see backend-driven campaigns regardless of where the
+ * subscription was opened. Without this, Hub's per-campaign subscription
+ * would be a private channel and other pages would appear empty.
  */
+
+import { globalEventBus } from '../core/EventBus.js';
 
 const WS_BASE = 'ws://localhost:9393/ws';
 
@@ -53,6 +61,23 @@ export class WSBroadcaster {
 
                 // Handle pong / system messages silently
                 if (message.type === 'pong' || message.type === 'connected') return;
+
+                // Mirror to in-browser globalEventBus so agent pages
+                // (Planner / Optimizer / ContentGen / Logs) see backend
+                // events. message.event_type uses backend domain names
+                // ('PlanGenerated', 'ContentGenerated', ...) which match
+                // what local subscribers already listen for.
+                if (message.event_type) {
+                    try {
+                        globalEventBus.publish(
+                            message.event_type,
+                            message.payload || {},
+                            message.campaign_id || campaignId,
+                        );
+                    } catch (e) {
+                        console.warn('[WS] mirror to globalEventBus failed', e);
+                    }
+                }
 
                 entry.callbacks.forEach(cb => cb(message));
             } catch (err) {

@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenAutoGrowth · Test Harness</title>
+  <link rel="stylesheet" href="/src/ui/tokens.css">
+  <style>
+    /* ── Layout ─────────────────────────────────────────────── */
+    html, body {
+      margin: 0; padding: 0; height: 100%;
+      background: var(--bg-L0);
+      color: var(--text-primary);
+      font-family: var(--font-sans, system-ui, -apple-system, sans-serif);
+      font-size: var(--fs-body, 14px);
+      line-height: var(--lh-body, 1.5);
+      -webkit-font-smoothing: antialiased;
+    }
+    body {
+      display: grid;
+      grid-template-columns: 460px 1fr;
+      height: 100vh;
+      background-image:
+        radial-gradient(circle at 20% 10%, rgba(165,140,95,0.035), transparent 50%),
+        radial-gradient(circle at 80% 70%, rgba(139,115,85,0.025), transparent 60%);
+    }
+    @media (max-width: 900px) {
+      body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; height: auto; }
+      #sidebar { max-height: 60vh; }
+    }
+
+    #sidebar {
+      overflow-y: auto;
+      padding: var(--sp-5, 20px);
+      border-right: 1px solid var(--border-subtle, #e5dfd2);
+      background: rgba(253, 251, 246, 0.6);
+      backdrop-filter: blur(8px);
+    }
+    #app-frame {
+      width: 100%; height: 100%;
+      border: none;
+      background: var(--bg-L0, #fdfbf6);
+    }
+
+    /* ── Heading & section ─────────────────────────────────── */
+    .harness-title {
+      font-family: var(--font-serif, Georgia, serif);
+      font-size: 22px;
+      font-weight: 600;
+      margin: 0 0 4px;
+      letter-spacing: -0.01em;
+      color: var(--text-primary);
+    }
+    .harness-sub {
+      margin: 0 0 var(--sp-4, 16px);
+      font-size: 13px;
+      color: var(--text-tertiary, #8a7d62);
+    }
+
+    .panel {
+      background: var(--bg-L1, #fff);
+      border: 1px solid var(--border-subtle, #e5dfd2);
+      border-radius: 10px;
+      padding: 14px 14px 12px;
+      margin-bottom: 14px;
+      box-shadow: 0 1px 2px rgba(60,42,20,0.04);
+    }
+    .panel h3 {
+      margin: 0 0 10px;
+      font-family: var(--font-serif, Georgia, serif);
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      color: var(--text-secondary, #5a4d36);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .panel h3 .dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--accent-primary, #c08e3a);
+    }
+    .muted { color: var(--text-tertiary, #8a7d62); }
+    .tiny  { font-size: 11px; }
+
+    /* ── Live state ─────────────────────────────────────────── */
+    .state-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .state-cell {
+      background: var(--bg-L2, #faf6ec);
+      border-radius: 6px;
+      padding: 8px 10px;
+      display: flex; flex-direction: column;
+      gap: 2px;
+    }
+    .state-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-tertiary, #8a7d62);
+    }
+    .state-value {
+      font-family: ui-monospace, Menlo, monospace;
+      font-variant-numeric: tabular-nums;
+      font-size: 14px;
+      color: var(--text-primary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .state-value.success { color: var(--success, #689a4f); }
+    .state-value.warn    { color: var(--warning, #c08e3a); }
+    .state-value.danger  { color: var(--danger,  #c45c3c); }
+
+    /* ── Buttons & chips ────────────────────────────────────── */
+    .row { display: flex; flex-wrap: wrap; gap: 6px; }
+    .btn {
+      appearance: none;
+      background: var(--bg-L1, #fff);
+      color: var(--text-primary);
+      border: 1px solid var(--border-subtle, #e5dfd2);
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 13px;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      line-height: 1.2;
+    }
+    .btn:hover {
+      background: var(--bg-L2, #faf6ec);
+      border-color: var(--border-medium, #d4c8ad);
+    }
+    .btn-primary {
+      background: var(--accent-primary, #c08e3a);
+      color: #fff;
+      border-color: var(--accent-primary, #c08e3a);
+    }
+    .btn-primary:hover {
+      background: var(--accent-secondary, #a07626);
+      border-color: var(--accent-secondary, #a07626);
+    }
+    .btn-danger {
+      color: var(--danger, #c45c3c);
+      border-color: color-mix(in srgb, var(--danger, #c45c3c) 40%, transparent);
+    }
+    .btn-danger:hover {
+      background: color-mix(in srgb, var(--danger, #c45c3c) 8%, transparent);
+    }
+    .btn-block { display: flex; width: 100%; justify-content: flex-start; margin-bottom: 6px; }
+    .chip {
+      padding: 4px 10px;
+      border-radius: 99px;
+      border: 1px solid var(--border-subtle, #e5dfd2);
+      background: var(--bg-L1, #fff);
+      font-size: 12px;
+      cursor: pointer;
+      color: var(--text-secondary);
+    }
+    .chip:hover { background: var(--bg-L2); color: var(--text-primary); }
+    .chip.active {
+      background: var(--accent-primary, #c08e3a);
+      color: #fff;
+      border-color: var(--accent-primary, #c08e3a);
+    }
+    .key {
+      background: var(--bg-L2);
+      border: 1px solid var(--border-subtle);
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-family: ui-monospace, Menlo, monospace;
+      font-size: 11px;
+    }
+
+    /* ── Status indicator ───────────────────────────────────── */
+    .indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      padding: 3px 10px;
+      border-radius: 99px;
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-L2);
+      margin-left: auto;
+    }
+    .indicator.online  { color: var(--success, #689a4f); }
+    .indicator.offline { color: var(--danger, #c45c3c); }
+    .indicator-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: currentColor;
+    }
+    .indicator.online .indicator-dot { animation: pulse 1.6s ease-in-out infinite; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%      { opacity: 0.4; }
+    }
+
+    .last-event {
+      background: var(--bg-L2, #faf6ec);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-family: ui-monospace, Menlo, monospace;
+      font-size: 11px;
+      max-height: 90px;
+      overflow: auto;
+      color: var(--text-secondary);
+      margin-top: 6px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .panel-footer {
+      margin-top: 8px;
+      font-size: 11px;
+      color: var(--text-tertiary);
+      display: flex;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+  <aside id="sidebar">
+    <header style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
+      <div>
+        <h1 class="harness-title">🧪 OAG Test Harness</h1>
+        <p class="harness-sub">Drive the iframe app, seed campaigns, inject events, observe state — without leaving this panel.</p>
+      </div>
+      <span id="harness-indicator" class="indicator offline">
+        <span class="indicator-dot"></span>
+        <span id="harness-indicator-label">connecting…</span>
+      </span>
+    </header>
+
+    <!-- 1. Live state ─────────────────────────────────────── -->
+    <section class="panel">
+      <h3><span class="dot"></span>Live State</h3>
+      <div class="state-grid">
+        <div class="state-cell">
+          <span class="state-label">Active campaign</span>
+          <span class="state-value" id="state-active-campaign">—</span>
+        </div>
+        <div class="state-cell">
+          <span class="state-label">Status</span>
+          <span class="state-value" id="state-status">—</span>
+        </div>
+        <div class="state-cell">
+          <span class="state-label">Campaigns</span>
+          <span class="state-value" id="state-campaigns">0</span>
+        </div>
+        <div class="state-cell">
+          <span class="state-label">Events</span>
+          <span class="state-value" id="state-events">0</span>
+        </div>
+      </div>
+      <div class="last-event" id="last-event-pre">no events yet</div>
+      <div class="panel-footer">
+        <span class="tiny">refreshes ~1.5s</span>
+        <span class="tiny" id="state-route">/</span>
+      </div>
+    </section>
+
+    <!-- 2. Quick navigation ───────────────────────────────── -->
+    <section class="panel">
+      <h3><span class="dot"></span>Quick Nav <span class="tiny muted" style="margin-left:6px;font-weight:400">(iframe)</span></h3>
+      <div class="row">
+        <button class="chip" data-nav="/">Hub</button>
+        <button class="chip" data-nav="/campaigns">Campaigns</button>
+        <button class="chip" data-nav="/agents/orchestrator">Orchestrator</button>
+        <button class="chip" data-nav="/agents/planner">Planner</button>
+        <button class="chip" data-nav="/agents/strategy">Strategy</button>
+        <button class="chip" data-nav="/agents/content-gen">ContentGen</button>
+        <button class="chip" data-nav="/agents/multimodal">Multimodal</button>
+        <button class="chip" data-nav="/agents/channel-exec">ChannelExec</button>
+        <button class="chip" data-nav="/agents/analysis">Analysis</button>
+        <button class="chip" data-nav="/agents/optimizer">Optimizer</button>
+      </div>
+    </section>
+
+    <!-- 3. Direct seed (skip modal) ───────────────────────── -->
+    <section class="panel">
+      <h3><span class="dot"></span>Seed Campaign <span class="tiny muted" style="margin-left:6px;font-weight:400">via OAG.api (no modal)</span></h3>
+      <button class="btn btn-block" data-seed="ecom">🛒 [Physical] Smart-watch launch</button>
+      <button class="btn btn-block" data-seed="software">💻 [Software] Dev-tool SaaS</button>
+      <button class="btn btn-block" data-seed="lead">📝 [Lead Gen] B2B whitepaper</button>
+      <p class="tiny muted" style="margin: 6px 0 0;">Skips the Launch Modal — calls <span class="key">OAG.api.createCampaign()</span> + <span class="key">startCampaign()</span> directly.</p>
+    </section>
+
+    <!-- 4. Inject event (no backend) ──────────────────────── -->
+    <section class="panel">
+      <h3><span class="dot"></span>Inject Event <span class="tiny muted" style="margin-left:6px;font-weight:400">(into in-browser EventBus)</span></h3>
+      <p class="tiny muted" style="margin:0 0 8px;">Drops a synthetic event for the active campaign — useful for testing pages without firing the full pipeline.</p>
+      <div class="row">
+        <button class="btn" data-inject="StrategyDecided">StrategyDecided</button>
+        <button class="btn" data-inject="ContentGenerated">ContentGenerated</button>
+        <button class="btn" data-inject="AssetsGenerated">AssetsGenerated</button>
+        <button class="btn" data-inject="AdDeployed">AdDeployed</button>
+        <button class="btn" data-inject="ReportGenerated">ReportGenerated</button>
+        <button class="btn" data-inject="AnomalyDetected">AnomalyDetected</button>
+      </div>
+    </section>
+
+    <!-- 5. Maintenance ────────────────────────────────────── -->
+    <section class="panel">
+      <h3><span class="dot"></span>Maintenance</h3>
+      <div class="row">
+        <button class="btn" id="btn-copy-history">Copy event history</button>
+        <button class="btn" id="btn-toggle-lang">Toggle ZH ↔ EN</button>
+        <button class="btn btn-danger" id="btn-reset">Reset state &amp; reload</button>
+      </div>
+      <p class="tiny muted" style="margin: 8px 0 0;">Reset clears <span class="key">localStorage</span> (campaigns, locale, channel-exec creds) and reloads the iframe.</p>
+    </section>
+  </aside>
+
+  <iframe id="app-frame" src="/" title="OpenAutoGrowth app"></iframe>
+
+  <script>
+    const frame = document.getElementById('app-frame');
+    function appWin() { return frame?.contentWindow; }
+    function appDoc() { return frame?.contentDocument; }
+    function oag()    { return appWin()?.OAG; }
+
+    // ── Live state polling ─────────────────────────────────
+    function trunc(s, n=80) { s = String(s ?? ''); return s.length > n ? s.slice(0,n)+'…' : s; }
+    function fmtTime(iso)   { return iso ? new Date(iso).toLocaleTimeString([], { hour12: false }) : '—'; }
+
+    function refresh() {
+      const o = oag();
+      const indicator = document.getElementById('harness-indicator');
+      const indicatorLabel = document.getElementById('harness-indicator-label');
+      const ready = !!o?.eventBus;
+      indicator.className = 'indicator ' + (ready ? 'online' : 'offline');
+      indicatorLabel.textContent = ready ? 'connected' : 'connecting…';
+
+      const campaigns = ready ? Array.from((o.orchestrator?.campaigns || new Map()).values()) : [];
+      const events = ready ? (o.eventBus.history || []) : [];
+      const active = campaigns.find(c => c.status && !['COMPLETED','PAUSED'].includes(c.status)) || campaigns[campaigns.length-1];
+
+      document.getElementById('state-campaigns').textContent = campaigns.length;
+      document.getElementById('state-events').textContent = events.length;
+      document.getElementById('state-active-campaign').textContent = active?.campaign_id ? trunc(active.campaign_id, 24) : '—';
+
+      const status = active?.status || '—';
+      const sEl = document.getElementById('state-status');
+      sEl.textContent = status;
+      sEl.className = 'state-value' +
+        (status === 'PAUSED' || status === 'FAILED' ? ' danger'
+         : status === 'COMPLETED' ? ' success'
+         : status && status !== '—' ? ' warn'
+         : '');
+
+      const last = events[events.length-1];
+      const pre = document.getElementById('last-event-pre');
+      pre.textContent = last
+        ? `${fmtTime(last.occurred_at)} · ${last.event_type}\n${trunc(JSON.stringify(last.payload), 240)}`
+        : 'no events yet';
+
+      try {
+        const hash = appWin()?.location?.hash || '#/';
+        document.getElementById('state-route').textContent = hash;
+      } catch {}
+    }
+    setInterval(refresh, 1500);
+    frame.addEventListener('load', () => setTimeout(refresh, 200));
+
+    // ── Quick nav ──────────────────────────────────────────
+    document.querySelectorAll('[data-nav]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const path = btn.dataset.nav;
+        const w = appWin();
+        if (!w) return;
+        // Use location.hash to avoid full reload — preserves OAG state.
+        w.location.hash = '#' + path;
+      });
+    });
+
+    // ── Direct seed ────────────────────────────────────────
+    const SEEDS = {
+      ecom: {
+        goal: '推广新款智能手表，主打长续航与健康监测。受众为年轻白领。强调首发优惠 20%。',
+        campaign_type: 'ecom',
+        budget: { total: 50000, currency: 'CNY' },
+        kpi: { metric: 'ROAS', target: 3.0 },
+        constraints: { channels: ['tiktok','meta','google'], region: 'CN', url: 'https://example.com/product/smart-watch' },
+        timeline: { duration_days: 14 },
+      },
+      software: {
+        goal: '推广面向开发者的 SaaS 效率工具，可免费注册试用。重点强调多端同步与插件生态。',
+        campaign_type: 'software',
+        budget: { total: 20000, currency: 'CNY' },
+        kpi: { metric: 'CAC', target: 1.0 },
+        constraints: { channels: ['tiktok','meta'], region: 'GLOBAL', url: 'https://github.com/example/saas-tool' },
+        timeline: { duration_days: 7 },
+      },
+      lead: {
+        goal: '收集 B2B 企业 IT 主管的联系线索。推广企业级云防火墙白皮书下载，引导预约 Demo。',
+        campaign_type: 'lead',
+        budget: { total: 30000, currency: 'CNY' },
+        kpi: { metric: 'CTR', target: 1.0 },
+        constraints: { channels: ['google'], region: 'CN', url: 'https://example.com/landing/b2b-leads' },
+        timeline: { duration_days: 10 },
+      },
+    };
+
+    document.querySelectorAll('[data-seed]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const o = oag();
+        if (!o?.api?.createCampaign) {
+          alert('App not ready — wait for the iframe to finish loading.');
+          return;
+        }
+        const seed = SEEDS[btn.dataset.seed];
+        const today = new Date();
+        const end = new Date(today.getTime() + (seed.timeline.duration_days || 7) * 86400000);
+        seed.timeline.start = today.toISOString().split('T')[0];
+        seed.timeline.end   = end.toISOString().split('T')[0];
+
+        btn.disabled = true; const orig = btn.textContent;
+        btn.textContent = '⏳ launching…';
+        try {
+          const resp = await o.api.createCampaign(seed);
+          if (!resp?.success) throw new Error(typeof resp?.error === 'object' ? JSON.stringify(resp.error) : (resp?.error || 'unknown error'));
+          await o.api.startCampaign(resp.data.id);
+          btn.textContent = '✅ launched';
+        } catch (e) {
+          btn.textContent = '❌ ' + (e.message || 'failed');
+        } finally {
+          setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1800);
+        }
+      });
+    });
+
+    // ── Inject event ───────────────────────────────────────
+    const SAMPLES = {
+      StrategyDecided: () => ({
+        strategy: {
+          channel_plan: [
+            { channel:'tiktok', budget:20000, score:0.82, bid_strategy:'lowest_cost' },
+            { channel:'meta',   budget:18000, score:0.74, bid_strategy:'cost_cap',     bid_target:120 },
+            { channel:'google', budget:12000, score:0.65, bid_strategy:'target_cpa',   bid_target:90  },
+          ],
+          total_budget: 50000,
+          reasoning: '[harness] synthetic strategy — distributed by mock score',
+        },
+      }),
+      ContentGenerated: () => ({
+        bundle: {
+          variants: [
+            { id:'v1', headline:'Built for sleep + steps', body:'14-day battery. Sleep tracking. Live HR.', tone:'minimal' },
+            { id:'v2', headline:'Outwork your old watch',  body:'2-week battery. ECG. SPO2. Always-on.',   tone:'energetic' },
+          ],
+        },
+      }),
+      AssetsGenerated: () => ({
+        asset_ids: ['asset_image_a','asset_image_b','asset_video_c'],
+        type: 'image',
+      }),
+      AdDeployed: () => ({
+        ad_campaign_ids: ['tiktok_camp_'+Date.now(), 'meta_camp_'+Date.now()],
+        platforms: ['tiktok','meta'],
+      }),
+      ReportGenerated: () => ({
+        report_id: 'rpt_'+Date.now(),
+        metrics: { impressions:120000, clicks:3600, conversions:180, spend:15000, revenue:42000, ctr:0.03, cvr:0.05, roas:2.8 },
+        anomalies: [],
+      }),
+      AnomalyDetected: () => ({
+        metric: 'ctr', channel: 'meta', severity: 'HIGH',
+        description: '[harness] CTR collapsed below baseline',
+      }),
+    };
+
+    document.querySelectorAll('[data-inject]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const o = oag();
+        if (!o?.eventBus) { alert('EventBus not ready'); return; }
+        const type = btn.dataset.inject;
+        const campaigns = Array.from((o.orchestrator?.campaigns || new Map()).values());
+        const cid = campaigns[campaigns.length-1]?.campaign_id || 'harness-synthetic';
+        const payload = SAMPLES[type]();
+        o.eventBus.publish(type, payload, cid);
+        btn.style.transition = 'background 0.4s';
+        const prev = btn.style.background;
+        btn.style.background = 'var(--accent-soft, rgba(192,142,58,0.18))';
+        setTimeout(() => { btn.style.background = prev; }, 600);
+      });
+    });
+
+    // ── Maintenance ────────────────────────────────────────
+    document.getElementById('btn-copy-history').addEventListener('click', async () => {
+      const o = oag();
+      const data = JSON.stringify(o?.eventBus?.history || [], null, 2);
+      try {
+        await navigator.clipboard.writeText(data);
+        alert(`Copied ${o?.eventBus?.history?.length || 0} events to clipboard.`);
+      } catch (e) {
+        alert('Clipboard denied — open DevTools and copy manually:\n\n' + data.slice(0, 200) + '…');
+      }
+    });
+
+    document.getElementById('btn-toggle-lang').addEventListener('click', () => {
+      const w = appWin();
+      try {
+        const cur = w.localStorage.getItem('locale') || 'zh';
+        const next = cur === 'zh' ? 'en' : 'zh';
+        w.localStorage.setItem('locale', next);
+        const btn = w.document.getElementById(next === 'zh' ? 'btn-lang-zh' : 'btn-lang-en');
+        if (btn) btn.click(); else w.location.reload();
+      } catch (e) { console.warn(e); }
+    });
+
+    document.getElementById('btn-reset').addEventListener('click', () => {
+      if (!confirm('Clear all campaigns / channel-exec credentials / locale and reload?')) return;
+      try {
+        const ls = appWin()?.localStorage;
+        ls?.removeItem('oag_campaigns');
+        ls?.removeItem('oag.channel-exec.credentials.v1');
+        ls?.removeItem('locale');
+      } catch {}
+      frame.src = '/?_=' + Date.now();
+    });
+
+    // First paint
+    setTimeout(refresh, 400);
+  </script>
+</body>
+</html>

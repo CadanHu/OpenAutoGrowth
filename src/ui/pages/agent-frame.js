@@ -19,10 +19,12 @@ import { i18n }   from '../../i18n/index.js';
 import { icon }   from '../icons.js';
 import { router } from '../router.js';
 
-export function createAgentFrame({ agent, tabs, onRun }) {
+export function createAgentFrame({ agent, tabs, onRun, runLabelKey, runLabelFallback, runIconName, defaultTabId }) {
   let root = null;
   let panelEl = null;
-  let currentTabId = tabs[0]?.id;
+  let currentTabId = (defaultTabId && tabs.some(t => t.id === defaultTabId))
+    ? defaultTabId
+    : tabs[0]?.id;
   let currentCleanup = null;
   const tabListeners = [];
 
@@ -53,8 +55,8 @@ export function createAgentFrame({ agent, tabs, onRun }) {
           </span>
           ${onRun ? `
             <button class="btn btn-primary" data-agent-run>
-              ${icon('play', 'sm')}
-              <span>${t('btn_run_now', 'Run Now')}</span>
+              ${icon(runIconName || 'play', 'sm')}
+              <span>${t(runLabelKey || 'btn_run_now', runLabelFallback || 'Run Now')}</span>
             </button>` : ''}
         </div>
       </header>
@@ -75,13 +77,32 @@ export function createAgentFrame({ agent, tabs, onRun }) {
     `;
   }
 
-  async function renderTab(id) {
+  // Sync the tab choice into the URL hash query (e.g. #/agents/planner?tab=replan)
+  // using history.pushState — this creates a real history entry so the browser
+  // back button returns to the previous tab. pushState does NOT fire hashchange,
+  // so the router will not re-resolve and re-mount the page.
+  function syncTabToUrl(id) {
+    try {
+      const fullHash = location.hash.slice(1) || '/';
+      const [path] = fullHash.split('?');
+      const params = new URLSearchParams(location.hash.split('?')[1] || '');
+      if (params.get('tab') === id) return;  // no-op
+      params.set('tab', id);
+      const next = `#${path}?${params.toString()}`;
+      history.pushState(null, '', next);
+    } catch (e) {
+      console.warn('[agent-frame] syncTabToUrl failed', e);
+    }
+  }
+
+  async function renderTab(id, { silent = false } = {}) {
     if (!panelEl) return;
     if (typeof currentCleanup === 'function') {
       try { currentCleanup(); } catch (e) { console.error('[agent-frame] tab cleanup error', e); }
       currentCleanup = null;
     }
     currentTabId = id;
+    if (!silent) syncTabToUrl(id);
     const tab = tabs.find(t => t.id === id);
     if (!tab) { panelEl.innerHTML = ''; return; }
 
@@ -126,7 +147,10 @@ export function createAgentFrame({ agent, tabs, onRun }) {
       tabListeners.push({ btn, handler });
     }
 
-    renderTab(currentTabId);
+    // Initial render: do NOT push a history entry — the URL already reflects
+    // the chosen tab (or the page-level default). silent:true bypasses
+    // syncTabToUrl so first paint doesn't pollute the back stack.
+    renderTab(currentTabId, { silent: true });
   }
 
   function unmount() {

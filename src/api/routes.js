@@ -6,14 +6,21 @@
 const API_BASE = 'http://localhost:9393/v1';
 
 export class CampaignAPI {
-    constructor() {
-        // orchestrator/memory 参数保留以兼容 main.js 构造调用，但实际不使用
+    constructor({ orchestrator, memory } = {}) {
+        this.orchestrator = orchestrator;
+        this.memory = memory;
     }
 
     // ── POST /v1/campaigns ─────────────────────────────────────────────────
 
     async createCampaign(body) {
-        return this._request('POST', '/campaigns', body);
+        const resp = await this._request('POST', '/campaigns', body);
+        if (!resp.success && String(resp.error).includes('Failed to fetch') && this.orchestrator) {
+            console.warn('[API] Backend unreachable. Falling back to mock Orchestrator.');
+            const result = await this.orchestrator.processGoal(body);
+            return { success: true, data: { id: result.campaign_id, status: result.status, budget: body.budget } };
+        }
+        return resp;
     }
 
     async analyzeUrl(url, type = 'ecom') {

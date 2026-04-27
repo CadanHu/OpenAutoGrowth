@@ -38,24 +38,24 @@ class Settings(BaseSettings):
     # ── LLM Providers ──────────────────────────────────────────────
     # Anthropic
     anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
-    anthropic_model: str = Field(default="claude-3-5-sonnet-20241022", alias="ANTHROPIC_MODEL")
-    anthropic_max_tokens: int = Field(default=4096, alias="ANTHROPIC_MAX_TOKENS")
+    anthropic_model: str = Field(default="claude-4-7-opus-202604", alias="ANTHROPIC_MODEL")
+    anthropic_max_tokens: int = Field(default=8192, alias="ANTHROPIC_MAX_TOKENS")
 
     # Gemini
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
-    gemini_model: str = Field(default="gemini-1.5-pro", alias="GEMINI_MODEL")
+    gemini_model: str = Field(default="gemini-4-pro", alias="GEMINI_MODEL")
 
     # DeepSeek
     deepseek_api_key: str = Field(default="", alias="DEEPSEEK_API_KEY")
-    deepseek_model: str = Field(default="deepseek-chat", alias="DEEPSEEK_MODEL")
+    deepseek_model: str = Field(default="deepseek-v4", alias="DEEPSEEK_MODEL")
 
     # Qwen (DashScope)
     qwen_api_key: str = Field(default="", alias="QWEN_API_KEY")
-    qwen_model: str = Field(default="qwen-max", alias="QWEN_MODEL")
+    qwen_model: str = Field(default="qwen-4-max", alias="QWEN_MODEL")
 
     # Zhipu AI (GLM)
     zhipu_api_key: str = Field(default="", alias="ZHIPU_API_KEY")
-    zhipu_model: str = Field(default="glm-4", alias="ZHIPU_MODEL")
+    zhipu_model: str = Field(default="glm-6", alias="ZHIPU_MODEL")
 
     # ── Ad Platforms ───────────────────────────────────────────────
     meta_app_id: str = Field(default="", alias="META_APP_ID")

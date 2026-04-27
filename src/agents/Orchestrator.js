@@ -12,12 +12,32 @@ export class Orchestrator {
         this.agents     = new Map();    // Map<AgentType, Agent>
         this.campaigns  = new Map();    // Map<campaignId, CampaignState>
 
+        this._load();
+
         // 订阅关键事件
         globalEventBus.subscribe('PlanGenerated',          e => this._onPlanGenerated(e));
         globalEventBus.subscribe('ContentApproved',        e => this._onContentApproved(e));
         globalEventBus.subscribe('AdDeployed',             e => this._onAdDeployed(e));
         globalEventBus.subscribe('OptimizationApplied',    e => this._onOptimizationApplied(e));
         globalEventBus.subscribe('AnomalyDetected',        e => this._onAnomalyDetected(e));
+    }
+
+    _load() {
+        try {
+            const saved = localStorage.getItem('oag_campaigns');
+            if (saved) {
+                const arr = JSON.parse(saved);
+                arr.forEach(c => this.campaigns.set(c.campaign_id, c));
+            }
+        } catch (e) {
+            console.warn('[Orchestrator] Failed to load campaigns', e);
+        }
+    }
+
+    _save() {
+        try {
+            localStorage.setItem('oag_campaigns', JSON.stringify(Array.from(this.campaigns.values())));
+        } catch (e) {}
     }
 
     registerAgent(agentType, agent) {
@@ -41,9 +61,11 @@ export class Orchestrator {
             active_tasks:  [],
             budget,
             kpi,
+            trace:         [], // 详细的数据流动记录
         };
 
         this.campaigns.set(campaign.campaign_id, campaign);
+        this._save();
         console.log(`[Orchestrator] 🎯 New campaign: ${campaign.campaign_id} | Goal: ${goal}`);
 
         // 检索历史记忆
@@ -52,6 +74,7 @@ export class Orchestrator {
         // 委托 Planner 生成 DAG
         const plan = await this.planner.createPlan({ goal, budget, kpi, constraints, history });
         campaign.plan_id = plan.id;
+        this._save();
 
         globalEventBus.publish('PlanGenerated', { plan, campaign_id: campaign.campaign_id }, campaign.campaign_id);
         return { campaign_id: campaign.campaign_id, status: 'PLANNING', plan_preview: plan };
@@ -88,21 +111,31 @@ export class Orchestrator {
                 }
 
                 campaign.active_tasks.push(task.id);
+                this._save();
                 console.log(`[Orchestrator] → Dispatch "${task.id}" to ${task.agentType}`);
 
+                const traceEntry = {
+                    timestamp: Date.now(),
+                    agentType: task.agentType,
+                    taskId: task.id,
+                    input: { ...task.params, context: results },
+                    output: null,
+                    error: null
+                };
+
                 try {
-                    const result = await agent.run({
-                        ...task.params,
-                        campaign_id: campaignId,
-                        context: results,     // 上游结果传递
-                    });
+                    const result = await agent.run(traceEntry.input);
                     results[task.id] = result;
+                    traceEntry.output = result;
                     this.memory?.save?.(`${campaignId}:${task.id}`, result);
                 } catch (err) {
                     console.error(`[Orchestrator] Task ${task.id} failed:`, err.message);
                     results[task.id] = { error: err.message };
+                    traceEntry.error = err.message;
                 } finally {
+                    campaign.trace.push(traceEntry);
                     campaign.active_tasks = campaign.active_tasks.filter(id => id !== task.id);
+                    this._save();
                     pending.splice(pending.indexOf(task), 1);
                 }
             }));
@@ -116,6 +149,7 @@ export class Orchestrator {
         const campaign = this.campaigns.get(campaign_id);
         if (!campaign) return;
         campaign.status = 'PENDING_REVIEW';
+        this._save();
         console.log(`[Orchestrator] Plan ready. Campaign → PENDING_REVIEW`);
         // TODO: 触发 Review Gate 逻辑
         // 简化：自动审批后直接执行
@@ -128,7 +162,7 @@ export class Orchestrator {
 
     _onAdDeployed({ payload, campaign_id }) {
         const campaign = this.campaigns.get(campaign_id);
-        if (campaign) campaign.status = 'MONITORING';
+        if (campaign) { campaign.status = 'MONITORING'; this._save(); }
         console.log(`[Orchestrator] Ads live. Campaign → MONITORING`);
     }
 
@@ -137,13 +171,14 @@ export class Orchestrator {
         if (!campaign) return;
         campaign.loop_count += 1;
         campaign.status = `LOOP_${campaign.loop_count}`;
+        this._save();
         console.log(`[Orchestrator] Optimization applied. Loop #${campaign.loop_count}`);
     }
 
     _onAnomalyDetected({ payload: { severity }, campaign_id }) {
         if (severity === 'CRITICAL' || severity === 'HIGH') {
             const campaign = this.campaigns.get(campaign_id);
-            if (campaign) campaign.status = 'PAUSED';
+            if (campaign) { campaign.status = 'PAUSED'; this._save(); }
             console.warn(`[Orchestrator] 🚨 Anomaly detected. Campaign → PAUSED`);
         }
     }

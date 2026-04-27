@@ -10,17 +10,17 @@
 
 ```mermaid
 graph TD
-    CAM[Campaign\nStatus] -->|状态变化触发| TASK[Task\nStatus]
-    CAM -->|状态变化触发| COPY[Copy\nStatus]
-    CAM -->|状态变化触发| ASSET[ContentAsset\nStatus]
-    CAM -->|状态变化触发| AD[Ad\nStatus]
+    CAM["Campaign<br/>Status"] -->|状态变化触发| TASK["Task<br/>Status"]
+    CAM -->|状态变化触发| COPY["Copy<br/>Status"]
+    CAM -->|状态变化触发| ASSET["ContentAsset<br/>Status"]
+    CAM -->|状态变化触发| AD["Ad<br/>Status"]
 
     TASK -->|完成触发| CAM
     COPY -->|批准触发| AD
     ASSET -->|批准触发| AD
     AD -->|上线触发| CAM
-    AD -->|数据触发| REPORT[PerformanceReport]
-    REPORT -->|分析触发| OPTLOOP[OptimizationLoop]
+    AD -->|数据触发| REPORT["PerformanceReport"]
+    REPORT -->|分析触发| OPTLOOP["OptimizationLoop"]
     OPTLOOP -->|闭环触发| CAM
     OPTLOOP -->|重写触发| COPY
     OPTLOOP -->|预算触发| AD
@@ -61,7 +61,10 @@ stateDiagram-v2
         AssetApproved --> [*]: 内容就绪，通知 Orchestrator
     }
 
-    note right of PROD: Copy.status 和 Asset.status 变化\n在 Campaign.PRODUCTION 阶段内部发生
+    note right of PROD
+        Copy.status 和 Asset.status 变化
+        在 Campaign.PRODUCTION 阶段内部发生
+    end note
 ```
 
 **内容状态联动规则：**
@@ -108,24 +111,24 @@ Ad.status: ACTIVE（被替换）
 
 ```mermaid
 sequenceDiagram
-    participant ADS as Ad Platform
-    participant ANA as Analytics Service
-    participant RPT as PerformanceReport
-    participant OPT as Optimizer
+    participant AdPlatform
+    participant Analytics
+    participant Report
+    participant Optimizer
 
-    loop 每小时
-        ANA->>ADS: pull metrics (by ad_id)
-        ADS-->>ANA: impressions, clicks, spend, conversions
-        ANA->>RPT: upsert ChannelStats (period=current_hour)
-        ANA->>RPT: recalculate summary KPIs
+    loop Hourly
+        Analytics->>AdPlatform: pull metrics by ad id
+        AdPlatform-->>Analytics: impressions clicks spend conversions
+        Analytics->>Report: upsert ChannelStats hourly
+        Analytics->>Report: recalc summary KPIs
     end
 
-    Note over RPT: 每日 23:00 触发完整归因
+    Note over Report: Daily attribution at 23 oclock
 
-    ANA->>RPT: run attribution (Shapley Value)
-    ANA->>RPT: generate full PerformanceReport
-    RPT-->>ANA: report_id
-    ANA->>OPT: publish ReportGenerated(report_id)
+    Analytics->>Report: run Shapley attribution
+    Analytics->>Report: generate PerformanceReport
+    Report-->>Analytics: report id returned
+    Analytics->>Optimizer: publish ReportGenerated event
 ```
 
 **归因联动规则：**

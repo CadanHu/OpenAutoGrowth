@@ -19,12 +19,12 @@
 
 | 任务 | Primary Model | Fallback | 选型理由 |
 | :--- | :--- | :--- | :--- |
-| **Planner DAG 生成** | GPT-4o | Claude 3.5 Sonnet | 需要强逻辑和 JSON 结构化输出 |
-| **Orchestrator 目标解析** | GPT-4o | Gemini 1.5 Pro | 复杂意图理解 |
-| **ContentGen 文案生成** | Claude 3.5 Sonnet | GPT-4o | 创意写作更强，中文效果好 |
-| **Optimizer 模糊决策** | GPT-4o with Tools | Claude 3.5 Sonnet | 需要调用规则工具 |
-| **批量内容改写** | GPT-4o Mini | Gemini 1.5 Flash | 高频低成本 |
-| **内容安全审核** | LlamaGuard 3 | Azure Content Safety | 专用安全模型，成本低 |
+| **Planner DAG 生成** | GPT-5.5 | Claude 4.7 Opus | 需要强逻辑和 JSON 结构化输出 |
+| **Orchestrator 目标解析** | GPT-5.5 | Gemini 4 Pro | 复杂意图理解 |
+| **ContentGen 文案生成** | Claude 4.7 Opus | GPT-5.5 | 创意写作更强，中文效果好 |
+| **Optimizer 模糊决策** | GPT-5.5 with Tools | Claude 4.7 Opus | 需要调用规则工具 |
+| **批量内容改写** | GPT-5.5 Mini | Gemini 4 Flash | 高频低成本 |
+| **内容安全审核** | LlamaGuard 5 | Azure Content Safety | 专用安全模型，成本低 |
 
 ### LLM API 抽象层
 
@@ -64,14 +64,14 @@ class LLMRouter {
   Future:    Midjourney API v2    (最高质量，待 API 公测)
 
 视频生成:
-  Primary:   Runway Gen-3 Alpha  (15s/30s，效果最佳)
-  Secondary: Pika 2.0            (快速迭代，成本更低)
-  Future:    Sora API            (OpenAI，待商业化)
-  Local:     CogVideoX           (开源，可本地部署)
+  Primary:   Runway Gen-4        (15s/30s，效果最佳)
+  Secondary: Pika 3.0            (快速迭代，成本更低)
+  Future:    Sora 2.0 API        (OpenAI，已商业化)
+  Local:     CogVideoX-v2        (开源，可本地部署)
 
 图像理解（素材打标）:
-  Primary:   GPT-4o Vision       (多模态，直接调用)
-  Secondary: Gemini 1.5 Pro     (长上下文解析)
+  Primary:   GPT-5 Vision        (多模态，直接调用)
+  Secondary: Gemini 3 Pro       (长上下文解析)
 ```
 
 ---
@@ -149,11 +149,11 @@ BI / 可视化:
 
 | 工具 | 估算用量 | 月成本（USD） |
 | :--- | :--- | :--- |
-| OpenAI GPT-4o | 2M tokens/月 | ~$10 |
-| OpenAI GPT-4o Mini | 10M tokens/月 | ~$1.5 |
+| OpenAI GPT-5 | 2M tokens/月 | ~$12 |
+| OpenAI GPT-5 Mini | 10M tokens/月 | ~$1.2 |
 | DALL-E 3 | 500 images/月 | ~$60 |
-| Runway Gen-3 | 100 videos/月 | ~$95 |
+| Runway Gen-4 | 100 videos/月 | ~$110 |
 | Pinecone (Starter) | 1M vectors | ~$70 |
 | Redis Cloud | 1GB | ~$10 |
 | PostgreSQL (RDS) | db.t3.medium | ~$30 |
-| **合计** | | **~$277/月** |
+| **合计** | | **~$293/月** |

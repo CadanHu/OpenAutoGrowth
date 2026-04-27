@@ -292,12 +292,13 @@ let frame = null;
 export default {
   titleKey: 'page_agent_placeholder_title',
 
-  async mount(outlet) {
+  async mount(outlet, ctx) {
     const agent = AGENTS[AGENT_ID];
     if (!agent) { router.navigate('/'); return; }
 
     frame = createAgentFrame({
       agent,
+      defaultTabId: ctx?.query?.tab,
       tabs: [
         { id: 'overview', labelKey: 'agent_tab_overview', label: 'Overview', icon: 'activity',   render: renderOverview },
         { id: 'rules',    labelKey: 'agent_tab_rules',    label: 'Rules',    icon: 'settings',   render: renderRules },

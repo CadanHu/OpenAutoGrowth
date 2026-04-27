@@ -92,8 +92,15 @@ document.addEventListener('DOMContentLoaded', () => {
   router
     .register('/',                       () => import('./src/ui/pages/hub.js'))
     .register('/campaigns',              () => import('./src/ui/pages/campaigns.js'))
+    .register('/campaigns/:id',          () => import('./src/ui/pages/campaign-detail.js'))
     .register('/agents/content-gen',     () => import('./src/ui/pages/agent-content-gen.js'))
     .register('/agents/optimizer',       () => import('./src/ui/pages/agent-optimizer.js'))
+    .register('/agents/planner',         () => import('./src/ui/pages/agent-planner.js'))
+    .register('/agents/analysis',        () => import('./src/ui/pages/agent-analysis.js'))
+    .register('/agents/strategy',        () => import('./src/ui/pages/agent-strategy.js'))
+    .register('/agents/channel-exec',    () => import('./src/ui/pages/agent-channel-exec.js'))
+    .register('/agents/multimodal',      () => import('./src/ui/pages/agent-multimodal.js'))
+    .register('/agents/orchestrator',    () => import('./src/ui/pages/agent-orchestrator.js'))
     .register('/agents/:id',             () => import('./src/ui/pages/agent-placeholder.js'))
     .setFallback('/');
 

@@ -28,7 +28,7 @@ ARQ_REDIS_URL=redis://localhost:6379/1
 
 # ── LLM ────────────────────────────────────────────
 ANTHROPIC_API_KEY=sk-ant-...
-ANTHROPIC_MODEL=claude-sonnet-4-6
+ANTHROPIC_MODEL=claude-4-opus-202602
 ANTHROPIC_MAX_TOKENS=4096
 
 # ── 广告平台 API ────────────────────────────────────
