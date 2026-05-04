@@ -444,6 +444,23 @@ CREATE INDEX idx_memory_type     ON agent_memory(memory_type);
 CREATE INDEX idx_memory_vector   ON agent_memory USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 
 -- ============================================================
+-- TABLE: llm_usage  [LLM Token 用量追踪]
+-- ============================================================
+CREATE TABLE llm_usage (
+    id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    campaign_id     UUID        REFERENCES campaigns(id),
+    provider        VARCHAR(40) NOT NULL,
+    model           VARCHAR(100) NOT NULL,
+    input_tokens    INTEGER     NOT NULL DEFAULT 0,
+    output_tokens   INTEGER     NOT NULL DEFAULT 0,
+    latency_ms      INTEGER,
+    agent_type      VARCHAR(40),
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_llm_usage_campaign   ON llm_usage(campaign_id);
+CREATE INDEX idx_llm_usage_agent_type ON llm_usage(agent_type);
+
+-- ============================================================
 -- TABLE: events  [领域事件安全存储（Outbox Pattern）]
 -- ============================================================
 CREATE TABLE domain_events (

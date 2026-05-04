@@ -27,6 +27,15 @@ async def init(drop_first: bool = False):
         await conn.run_sync(Base.metadata.create_all)
         print("✓  All ORM tables created")
 
+        # Seed default organization
+        from app.models.user import Organization
+        await conn.execute(
+            text("INSERT INTO organizations (id, name, slug) VALUES "
+                 "(:id, 'Default Org', 'default-org') ON CONFLICT (slug) DO NOTHING"),
+            {"id": "00000000-0000-0000-0000-000000000001"}
+        )
+        print("✓  Default organization seeded")
+
         # Quick sanity check
         result = await conn.execute(
             text("SELECT table_name FROM information_schema.tables "

@@ -6,7 +6,7 @@ Output: state.review_result (APPROVED/REJECTED), state.review_feedback
 """
 import json
 import structlog
-from app.core.llm import llm_client
+from app.core.llm import llm_client, current_agent_type
 from .state import CampaignState
 
 logger = structlog.get_logger(__name__)
@@ -15,6 +15,7 @@ async def reviewer_node(state: CampaignState) -> dict:
     """
     LangGraph node: Review generated content for quality and constraints.
     """
+    _at_token = current_agent_type.set("REVIEWER")
     logger.info("reviewer_start", campaign_id=state["campaign_id"])
 
     content_bundle = state.get("content")

@@ -64,14 +64,50 @@ async def analyze_url_endpoint(payload: dict):
 # Allowed status transitions
 TRANSITIONS: dict[str, list[str]] = {
     "DRAFT":           ["PLANNING"],
-    "PLANNING":        ["PENDING_REVIEW", "PLANNING_FAILED"],
-    "PENDING_REVIEW":  ["PRODUCTION"],
-    "PRODUCTION":      ["DEPLOYED", "PRODUCTION_FAILED"],
+    "PLANNING":        ["PENDING_REVIEW", "PLANNING_FAILED", "PAUSED"],
+    "PENDING_REVIEW":  ["PRODUCTION", "PAUSED"],
+    "PRODUCTION":      ["DEPLOYED", "PRODUCTION_FAILED", "PAUSED"],
     "DEPLOYED":        ["MONITORING", "PAUSED"],
     "MONITORING":      ["OPTIMIZING", "PAUSED", "COMPLETED"],
     "OPTIMIZING":      ["MONITORING", "PAUSED", "COMPLETED"],
-    "PAUSED":          ["MONITORING", "COMPLETED"],
+    # While the LangGraph pipeline is in a loop iteration the campaign sits
+    # in LOOP_1..LOOP_5; pause must be reachable from there or the global
+    # "Pause all" button can't actually stop a running campaign.
+    "LOOP_1":          ["PAUSED", "OPTIMIZING", "MONITORING", "COMPLETED"],
+    "LOOP_2":          ["PAUSED", "OPTIMIZING", "MONITORING", "COMPLETED"],
+    "LOOP_3":          ["PAUSED", "OPTIMIZING", "MONITORING", "COMPLETED"],
+    "LOOP_4":          ["PAUSED", "OPTIMIZING", "MONITORING", "COMPLETED"],
+    "LOOP_5":          ["PAUSED", "OPTIMIZING", "MONITORING", "COMPLETED"],
+    "PAUSED":          ["MONITORING", "OPTIMIZING", "COMPLETED"],
 }
+
+
+# Redis-backed cooperative pause flag. The ARQ worker's optimizer node
+# checks this every loop boundary (see app/agents/optimizer.py); when set,
+# the LangGraph short-circuits to "done" instead of starting another loop.
+# The flag survives worker restarts and is shared across processes.
+def _pause_flag_key(campaign_id) -> str:
+    return f"oag:campaign:{campaign_id}:paused"
+
+
+async def _set_pause_flag(campaign_id) -> None:
+    try:
+        from app.core.event_bus import event_bus
+        if not event_bus._redis:
+            await event_bus.connect()
+        await event_bus._redis.set(_pause_flag_key(campaign_id), "1", ex=86400)
+    except Exception as exc:
+        logger.warning("pause_flag_set_failed", campaign_id=str(campaign_id), error=str(exc))
+
+
+async def _clear_pause_flag(campaign_id) -> None:
+    try:
+        from app.core.event_bus import event_bus
+        if not event_bus._redis:
+            await event_bus.connect()
+        await event_bus._redis.delete(_pause_flag_key(campaign_id))
+    except Exception as exc:
+        logger.warning("pause_flag_clear_failed", campaign_id=str(campaign_id), error=str(exc))
 
 
 async def _get_campaign_or_404(campaign_id: UUID, db: AsyncSession) -> Campaign:
@@ -99,6 +135,12 @@ async def _transition(campaign: Campaign, new_status: str, db: AsyncSession) -> 
     )
     db.add(event)
     await db.flush()
+    # `updated_at` has a server-side default (`now()`), so flush() leaves the
+    # ORM attribute marked expired. If we hand the campaign straight to a
+    # response_model=CampaignResponse, Pydantic's lazy attribute access
+    # triggers an async DB load outside the greenlet context and crashes
+    # serialization with `MissingGreenlet`. Explicit refresh keeps it sync.
+    await db.refresh(campaign)
 
     await event_bus.publish(
         "StatusChanged",
@@ -201,36 +243,93 @@ async def start_campaign(campaign_id: UUID, db: AsyncSession = Depends(get_db)):
 
 @router.post("/{campaign_id}/pause", response_model=CampaignResponse)
 async def pause_campaign(campaign_id: UUID, db: AsyncSession = Depends(get_db)):
-    campaign = await _get_campaign_or_404(campaign_id, db)
-    return await _transition(campaign, "PAUSED", db)
+    try:
+        campaign = await _get_campaign_or_404(campaign_id, db)
+        # Set the cooperative pause flag FIRST so any in-flight loop boundary
+        # the optimizer reaches sees it before we even commit the DB change.
+        await _set_pause_flag(campaign_id)
+        return await _transition(campaign, "PAUSED", db)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        # Surface real errors instead of letting Starlette swallow them
+        # behind a bare "Internal Server Error" body.
+        logger.exception("pause_campaign_failed", campaign_id=str(campaign_id))
+        raise HTTPException(status_code=500, detail=f"pause failed: {exc!s}") from exc
 
 
 @router.post("/{campaign_id}/resume", response_model=CampaignResponse)
 async def resume_campaign(campaign_id: UUID, db: AsyncSession = Depends(get_db)):
     campaign = await _get_campaign_or_404(campaign_id, db)
+    await _clear_pause_flag(campaign_id)
     return await _transition(campaign, "MONITORING", db)
 
 
 @router.post("/{campaign_id}/complete", response_model=CampaignResponse)
 async def complete_campaign(campaign_id: UUID, db: AsyncSession = Depends(get_db)):
     campaign = await _get_campaign_or_404(campaign_id, db)
+    await _clear_pause_flag(campaign_id)
     return await _transition(campaign, "COMPLETED", db)
 
 
 @router.delete("/{campaign_id}", status_code=204)
 async def delete_campaign(campaign_id: UUID, db: AsyncSession = Depends(get_db)):
-    """Delete a campaign and all its sub-resources."""
-    # Ensure ContentBundle is imported so SQLAlchemy handles cascade if configured
-    from app.models.content import ContentBundle
+    """
+    Delete a campaign and every record that references it.
+
+    Several FKs to `campaigns.id` are NOT configured with ON DELETE CASCADE
+    or ORM-side cascade (optimization_records, agent_memory, performance_reports,
+    anomalies, content_assets/copies via campaign_id, tasks via campaign_id),
+    so we issue explicit DELETE statements in dependency order before removing
+    the campaign row itself. A single transaction keeps the operation atomic.
+    """
+    from sqlalchemy import delete
+    from app.models.campaign import Plan, Task
+    from app.models.content import ContentBundle, ContentAsset, Copy
+    from app.models.analytics import PerformanceReport, ChannelStat, VariantStat, Anomaly
+    from app.models.optimization import OptimizationRecord, AgentMemory
+    from app.models.usage import LLMUsage
+
     campaign = await db.get(Campaign, campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail=f"Campaign {campaign_id} not found")
-    
-    # We load them to ensure ORM-side cascade works (sqlalchemy will handle orphans if loaded)
-    # Alternatively, ensure DB has ON DELETE CASCADE.
-    # In async pg/sqlite, loading them is safer for ORM cascade.
-    await db.delete(campaign)
+
+    # 1. Analytics: drill into report children first.
+    report_ids_q = select(PerformanceReport.id).where(PerformanceReport.campaign_id == campaign_id)
+    await db.execute(delete(VariantStat).where(VariantStat.report_id.in_(report_ids_q)))
+    await db.execute(delete(ChannelStat).where(ChannelStat.report_id.in_(report_ids_q)))
+    await db.execute(delete(Anomaly).where(Anomaly.campaign_id == campaign_id))
+    await db.execute(delete(PerformanceReport).where(PerformanceReport.campaign_id == campaign_id))
+
+    # 2. Optimization side-tables + LLM usage rows.
+    await db.execute(delete(OptimizationRecord).where(OptimizationRecord.campaign_id == campaign_id))
+    await db.execute(delete(AgentMemory).where(AgentMemory.campaign_id == campaign_id))
+    await db.execute(delete(LLMUsage).where(LLMUsage.campaign_id == campaign_id))
+
+    # 3. Content tree — bundle → copies + assets.
+    bundle_ids_q = select(ContentBundle.id).where(ContentBundle.campaign_id == campaign_id)
+    await db.execute(delete(Copy).where(Copy.bundle_id.in_(bundle_ids_q)))
+    await db.execute(delete(ContentAsset).where(ContentAsset.campaign_id == campaign_id))
+    await db.execute(delete(ContentBundle).where(ContentBundle.campaign_id == campaign_id))
+
+    # 4. Plan / Task tree (Task has FKs to BOTH plans and campaigns, delete by
+    # campaign_id covers any orphans that escaped plan-cascade).
+    await db.execute(delete(Task).where(Task.campaign_id == campaign_id))
+    await db.execute(delete(Plan).where(Plan.campaign_id == campaign_id))
+
+    # 5. Domain events (declared cascade, but be explicit so pure-SQL deletes
+    # don't depend on ORM-load order).
+    await db.execute(delete(DomainEvent).where(DomainEvent.campaign_id == campaign_id))
+
+    # 6. Finally the campaign row itself.
+    await db.execute(delete(Campaign).where(Campaign.id == campaign_id))
     await db.commit()
+
+    # Clean up the Redis pause flag (if any) — orphaned flag would otherwise
+    # outlive the campaign for 24h before its TTL expires.
+    await _clear_pause_flag(campaign_id)
+
+    logger.info("campaign_deleted", campaign_id=str(campaign_id))
     return None
 
 
@@ -252,3 +351,87 @@ async def get_campaign_events(
     )
     events = (await db.execute(q)).scalars().all()
     return {"total": len(events), "events": events}
+
+
+@router.get("/{campaign_id}/usage")
+async def get_campaign_usage(campaign_id: UUID, db: AsyncSession = Depends(get_db)):
+    """
+    Return LLM token usage + estimated USD cost for a campaign.
+
+    Aggregates one row per (provider, model) plus an overall total. Cost is
+    estimated from `app.core.llm.PRICING_PER_1M`; the underlying `llm_usage`
+    table stores raw token counts so the rate table can be revised without
+    rewriting historical data.
+    """
+    from app.models.usage import LLMUsage
+    from app.core.llm import estimate_cost_usd
+
+    await _get_campaign_or_404(campaign_id, db)
+
+    rows = (await db.execute(
+        select(LLMUsage).where(LLMUsage.campaign_id == campaign_id)
+    )).scalars().all()
+
+    by_model: dict[tuple[str, str], dict] = {}
+    total_in = total_out = total_calls = 0
+    total_latency_ms = 0
+    total_cost = 0.0
+    for r in rows:
+        key = (r.provider, r.model)
+        bucket = by_model.setdefault(key, {
+            "provider": r.provider,
+            "model": r.model,
+            "calls": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "estimated_cost_usd": 0.0,
+        })
+        bucket["calls"] += 1
+        bucket["input_tokens"]  += r.input_tokens or 0
+        bucket["output_tokens"] += r.output_tokens or 0
+        cost = estimate_cost_usd(r.provider, r.model, r.input_tokens or 0, r.output_tokens or 0)
+        bucket["estimated_cost_usd"] += cost
+        total_in  += r.input_tokens or 0
+        total_out += r.output_tokens or 0
+        total_calls += 1
+        total_cost += cost
+        total_latency_ms += (r.latency_ms or 0)
+
+    # Per-agent-type breakdown (shows usage per pipeline step)
+    by_agent: dict[str, dict] = {}
+    for r in rows:
+        atype = r.agent_type or "UNKNOWN"
+        bucket = by_agent.setdefault(atype, {
+            "agent_type": atype,
+            "calls": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "models": set(),
+            "estimated_cost_usd": 0.0,
+        })
+        bucket["calls"] += 1
+        bucket["input_tokens"]  += r.input_tokens or 0
+        bucket["output_tokens"] += r.output_tokens or 0
+        bucket["models"].add(r.model or "")
+        bucket["estimated_cost_usd"] += estimate_cost_usd(
+            r.provider, r.model, r.input_tokens or 0, r.output_tokens or 0
+        )
+
+    return {
+        "campaign_id": str(campaign_id),
+        "calls": total_calls,
+        "input_tokens": total_in,
+        "output_tokens": total_out,
+        "total_tokens": total_in + total_out,
+        "estimated_cost_usd": round(total_cost, 6),
+        "avg_latency_ms": round(total_latency_ms / total_calls, 1) if total_calls else 0,
+        "breakdown": [
+            {**v, "estimated_cost_usd": round(v["estimated_cost_usd"], 6)}
+            for v in sorted(by_model.values(), key=lambda x: -x["estimated_cost_usd"])
+        ],
+        "by_agent": [
+            {**v, "models": sorted(v["models"] - {""}), "estimated_cost_usd": round(v["estimated_cost_usd"], 6)}
+            for v in sorted(by_agent.values(), key=lambda x: -x["calls"])
+        ],
+    }
+

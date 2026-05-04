@@ -9,7 +9,7 @@ const PLATFORM_SIZES = {
     tiktok:  ['9:16'],
     meta:    ['1:1', '4:5', '9:16'],
     google:  ['16:9', '1:1'],
-    wechat:  ['1:1', '4:3'],
+    wechat:  ['1:1', '16:9', '9:16'],
     default: ['1:1', '9:16'],
 };
 

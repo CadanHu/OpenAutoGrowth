@@ -11,14 +11,16 @@
 
 > **关键词**：有机（Organic）· 宁静（Serene）· 高端（Premium）· 光滑（Smooth）· 温和（Gentle）
 
+<!-- [PREMIUM-UPGRADE-START]: 核心美学哲学 -->
 | 规则 | 做法 | 反例 |
 | :--- | :--- | :--- |
-| **分层靠深浅，不靠边框** | 多层米色背景叠出层级 | 粗黑边框、`rgba(255,255,255,0.1)` 冷玻璃边 |
-| **阴影柔、暖、浅** | `rgba(139,115,85,0.08)` 棕调散射 | `rgba(0,0,0,0.5)` 黑色重阴影 |
+| **严禁绝对色彩** | 使用奶白 (#FFFDD0) 或暖白 (#FAF9F6) 替代纯白 (#FFF)；用深焦糖 (#2B2A26) 替代纯黑 | 绝对 #000 或 #FFF |
+| **分层靠深浅，不靠边框** | 多层米色背景叠出层级，配合 1px 半透明浅色边框 (`rgba(0,0,0,0.05)`) | 粗黑边框、`rgba(255,255,255,0.1)` 冷玻璃边 |
+| **阴影柔、暖、浅** | **[NEW]** 放弃单层阴影，采用多层微弱散射阴影 (Soft Ambient Shadows) 构建“悬浮感” | `rgba(0,0,0,0.5)` 黑色重阴影 |
+| **负空间引导** | 遵循 8px 栅格，通过留白（Negative Space）而非线条来划分功能区 | 元素堆砌、过度装饰 |
 | **圆角大而统一** | `20px / 28px` 两档主圆角 | 4px 方角或混用 6/10/14/18 |
-| **对比度内敛** | 正文 `#2B2A26` on `#FDFBF6`（WCAG AA） | 纯黑 `#000` on 纯白 |
-| **去 emoji 改线性 SVG** | 1.25px 描边、圆头、无填充 | 混用 emoji + flat icon |
-| **动效慢而缓** | `280–420ms`，`cubic-bezier(0.22, 0.61, 0.36, 1)` | `150ms ease-out` 机械感 |
+| **动效缓而柔** | 全程使用 `cubic-bezier(0.22, 0.61, 0.36, 1)`，按钮点击须有微缩放感 (Scale-down) | `150ms ease-out` 机械感 |
+<!-- [PREMIUM-UPGRADE-END] -->
 
 ---
 
@@ -108,7 +110,7 @@
 | `--fs-h1` | `32px / 1.2` | 页面标题 |
 | `--fs-h2` | `24px / 1.3` | Section 标题 |
 | `--fs-h3` | `18px / 1.4` | 卡片标题 |
-| `--fs-body` | `15px / 1.6` | 正文 |
+| `--fs-body` | `15px / 1.628` | **[NEW]** 遵循黄金行高，增加阅读舒适度 |
 | `--fs-sm` | `13px / 1.5` | 说明、标签 |
 | `--fs-xs` | `11px / 1.4` | 时间戳、元数据 |
 
@@ -158,15 +160,16 @@
 
 ## 6. 阴影（Shadow）
 
-阴影一律为**暖棕散射**，避免黑色阴影。
+<!-- [PREMIUM-UPGRADE-START]: 高级环境阴影 -->
+阴影一律为**多层暖棕散射**，严禁使用单层重影。
 
-| Token | 值 | 用途 |
+| Token | 做法 (Multi-layered Logic) | 用途 |
 | :--- | :--- | :--- |
-| `--shadow-xs` | `0 1px 2px rgba(139,115,85,0.04)` | 按钮默认 |
-| `--shadow-sm` | `0 2px 8px rgba(139,115,85,0.06)` | 卡片默认 |
-| `--shadow-md` | `0 8px 24px rgba(139,115,85,0.08)` | 卡片 hover、浮层 |
-| `--shadow-lg` | `0 16px 48px rgba(139,115,85,0.12)` | Modal |
-| `--shadow-inset` | `inset 0 1px 2px rgba(139,115,85,0.06)` | 输入框嵌入感 |
+| `--shadow-xs` | `0 1px 2px rgba(139,115,85,0.02), 0 1px 1px rgba(139,115,85,0.02)` | 按钮默认 |
+| `--shadow-sm` | `0 2px 4px rgba(139,115,85,0.02), 0 4px 12px rgba(139,115,85,0.03)` | 卡片默认 |
+| `--shadow-md` | `0 12px 24px rgba(139,115,85,0.04), 0 4px 8px rgba(139,115,85,0.02)` | 卡片 hover、浮层 |
+| `--shadow-lg` | `0 24px 48px rgba(139,115,85,0.08), 0 12px 16px rgba(139,115,85,0.04)` | Modal / 全局浮窗 |
+<!-- [PREMIUM-UPGRADE-END] -->
 
 ---
 
@@ -256,6 +259,14 @@ hover:        transform: translateY(-2px); shadow: var(--shadow-md);
 - 背景 `--accent-soft`，文字 `--accent-primary`
 - 圆角 `--radius-full`
 - 字号 `--fs-xs`，内边距 `4px 10px`，字母全大写 + letter-spacing `0.08em`
+
+<!-- [PREMIUM-UPGRADE-START]: 加载体验规范 -->
+### 9.5 加载体验（Loading Strategy）
+
+- **骨架屏优先**：严禁在空白页面显示 Spinner。必须使用与实际内容结构一致的骨架屏（Skeleton Screen）占位。
+- **骨架动效**：骨架背景颜色在 `--bg-L2` 与 `--bg-L3` 之间进行平滑的呼吸渐变。
+- **渐进增强**：内容加载完成后，通过 `opacity: 0 -> 1` 的过渡效果平滑替换骨架屏。
+<!-- [PREMIUM-UPGRADE-END] -->
 
 ---
 

@@ -1,12 +1,16 @@
 # OpenAutoGrowth
 
-> AI-driven, multi-agent growth engine that runs the full marketing lifecycle —
-> **plan → produce → deploy → attribute → optimize** — on a closed loop.
+> **EN:** AI-driven, multi-agent growth engine that automates the full marketing lifecycle: plan → produce → deploy → attribute → optimize in an autonomous closed loop.
+> 
+> **ZH:** AI 驱动的多智能体增长引擎，实现营销全生命周期的自动化闭环：从策略规划、素材生成到自动投放与归因优化。
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Architecture](https://img.shields.io/badge/architecture-multi--agent-orange.svg)
-![Frontend](https://img.shields.io/badge/frontend-Vite%20%7C%20vanilla%20JS-f7df1e.svg)
-![Backend](https://img.shields.io/badge/backend-FastAPI%20%7C%20LangGraph-009688.svg)
+---
+
+## Overview
+
+**OpenAutoGrowth** is an autonomous growth engine powered by 8 specialized AI agents. Unlike traditional marketing tools that require manual input at every step, OpenAutoGrowth transforms high-level goals into executable growth. It leverages the **A2A (Agent-to-Agent) protocol** to orchestrate tasks across planning, creative production, and multi-platform deployment (Google, Meta, TikTok, WeChat), creating a self-optimizing "autopilot" for business growth.
+
+**OpenAutoGrowth** 是一个由 8 个专业 AI 智能体驱动的自主增长引擎。不同于需要繁琐人工操作的传统营销工具，OpenAutoGrowth 能将高层业务目标转化为可执行的增长链路。系统通过 **A2A (智能体通信协议)** 编排任务，涵盖策略规划、创意生产及多平台自动投放（Google, Meta, TikTok, 微信），为业务增长构建了一个能够自我优化的“自动驾驶”系统。
 
 ---
 

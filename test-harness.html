@@ -288,9 +288,24 @@
     <!-- 3. Direct seed (skip modal) ───────────────────────── -->
     <section class="panel">
       <h3><span class="dot"></span>Seed Campaign <span class="tiny muted" style="margin-left:6px;font-weight:400">via OAG.api (no modal)</span></h3>
+      <div class="muted tiny" style="margin: 0 0 6px; text-transform: uppercase; letter-spacing: 0.04em;">eCommerce / D2C</div>
       <button class="btn btn-block" data-seed="ecom">🛒 [Physical] Smart-watch launch</button>
+      <button class="btn btn-block" data-seed="ecom_apparel">👟 [Apparel] Sneaker drop · TikTok-led</button>
+      <button class="btn btn-block" data-seed="local_food">🍜 [Local] WeChat ramen-shop launch</button>
+
+      <div class="muted tiny" style="margin: 10px 0 6px; text-transform: uppercase; letter-spacing: 0.04em;">Software / SaaS</div>
       <button class="btn btn-block" data-seed="software">💻 [Software] Dev-tool SaaS</button>
+      <button class="btn btn-block" data-seed="b2b_saas">🏢 [B2B SaaS] Enterprise CRM · LinkedIn-style</button>
+
+      <div class="muted tiny" style="margin: 10px 0 6px; text-transform: uppercase; letter-spacing: 0.04em;">Lead Gen / Brand</div>
       <button class="btn btn-block" data-seed="lead">📝 [Lead Gen] B2B whitepaper</button>
+      <button class="btn btn-block" data-seed="creator">🎬 [Creator] Influencer cosmetics launch</button>
+      <button class="btn btn-block" data-seed="awareness">📣 [Brand] EV awareness · multi-channel</button>
+
+      <div class="muted tiny" style="margin: 10px 0 6px; text-transform: uppercase; letter-spacing: 0.04em;">Edge / failure</div>
+      <button class="btn btn-block" data-seed="anomaly">⚠️ [Stress] Underfunded · unrealistic ROAS</button>
+      <button class="btn btn-block" data-seed="zhihu_only">📚 [Article] Zhihu long-form only</button>
+
       <p class="tiny muted" style="margin: 6px 0 0;">Skips the Launch Modal — calls <span class="key">OAG.api.createCampaign()</span> + <span class="key">startCampaign()</span> directly.</p>
     </section>
 
@@ -383,6 +398,13 @@
     });
 
     // ── Direct seed ────────────────────────────────────────
+    // Each preset stresses a different combination of:
+    //   • campaign_type     → influences planner DAG choice
+    //   • channel mix       → exercises ChannelExec adapters (TikTok / Meta /
+    //                          Google / WeChat / Zhihu)
+    //   • region            → CN vs GLOBAL routing in Strategy
+    //   • KPI metric/target → ROAS / CAC / CTR / CPM / REACH branches in Optimizer
+    //   • budget & duration → tests rule-engine thresholds and OPTIMIZING loops
     const SEEDS = {
       ecom: {
         goal: '推广新款智能手表，主打长续航与健康监测。受众为年轻白领。强调首发优惠 20%。',
@@ -392,6 +414,22 @@
         constraints: { channels: ['tiktok','meta','google'], region: 'CN', url: 'https://example.com/product/smart-watch' },
         timeline: { duration_days: 14 },
       },
+      ecom_apparel: {
+        goal: '限量联名运动鞋首发，强调潮流文化与稀缺性。受众为 18-28 岁 Gen-Z，重视短视频开箱体验。',
+        campaign_type: 'ecom',
+        budget: { total: 80000, currency: 'CNY' },
+        kpi: { metric: 'ROAS', target: 4.0 },
+        constraints: { channels: ['tiktok','meta'], region: 'CN', url: 'https://example.com/sneakers/limited-drop' },
+        timeline: { duration_days: 5 },
+      },
+      local_food: {
+        goal: '本地新开日式拉面店开业引流，附近 3km 内堂食曝光。突出招牌豚骨与开业 6 折券。',
+        campaign_type: 'lead',
+        budget: { total: 8000, currency: 'CNY' },
+        kpi: { metric: 'CTR', target: 2.5 },
+        constraints: { channels: ['wechat'], region: 'CN', url: 'https://example.com/ramen/grand-open' },
+        timeline: { duration_days: 7 },
+      },
       software: {
         goal: '推广面向开发者的 SaaS 效率工具，可免费注册试用。重点强调多端同步与插件生态。',
         campaign_type: 'software',
@@ -400,6 +438,14 @@
         constraints: { channels: ['tiktok','meta'], region: 'GLOBAL', url: 'https://github.com/example/saas-tool' },
         timeline: { duration_days: 7 },
       },
+      b2b_saas: {
+        goal: '推广企业级 AI 客服 SaaS，决策者为 200-2000 人公司的 CTO / 客服总监。预约 Demo 即送行业报告。',
+        campaign_type: 'software',
+        budget: { total: 120000, currency: 'CNY' },
+        kpi: { metric: 'CAC', target: 800 },
+        constraints: { channels: ['google','meta'], region: 'GLOBAL', url: 'https://example.com/enterprise/ai-cs' },
+        timeline: { duration_days: 21 },
+      },
       lead: {
         goal: '收集 B2B 企业 IT 主管的联系线索。推广企业级云防火墙白皮书下载，引导预约 Demo。',
         campaign_type: 'lead',
@@ -407,6 +453,42 @@
         kpi: { metric: 'CTR', target: 1.0 },
         constraints: { channels: ['google'], region: 'CN', url: 'https://example.com/landing/b2b-leads' },
         timeline: { duration_days: 10 },
+      },
+      creator: {
+        goal: '推广国货美妆达人合作的限量唇釉，KOL 试色短视频驱动，强调显白与持久度。',
+        campaign_type: 'ecom',
+        budget: { total: 60000, currency: 'CNY' },
+        kpi: { metric: 'ROAS', target: 2.5 },
+        constraints: { channels: ['tiktok','wechat'], region: 'CN', url: 'https://example.com/beauty/kol-collab' },
+        timeline: { duration_days: 14 },
+      },
+      awareness: {
+        goal: '新款国产电动车上市预热，目标在三周内建立品牌认知，全国 18-45 岁中产家庭。',
+        campaign_type: 'ecom',
+        budget: { total: 200000, currency: 'CNY' },
+        kpi: { metric: 'CPM', target: 25 },
+        constraints: { channels: ['meta','google','wechat','tiktok'], region: 'CN', url: 'https://example.com/ev/preorder' },
+        timeline: { duration_days: 21 },
+      },
+      anomaly: {
+        // Intentionally underfunded with an unrealistic KPI — exercises the
+        // Optimizer "cannot reach target" branch and AnomalyDetected events.
+        goal: '低预算高目标压力测试：预算只有 ¥500，但要求 ROAS 达到 8.0。期望触发 Optimizer 异常分支。',
+        campaign_type: 'ecom',
+        budget: { total: 500, currency: 'CNY' },
+        kpi: { metric: 'ROAS', target: 8.0 },
+        constraints: { channels: ['tiktok'], region: 'CN', url: 'https://example.com/stress/test' },
+        timeline: { duration_days: 3 },
+      },
+      zhihu_only: {
+        // Single-channel run that exercises the long-form Zhihu adapter
+        // (which writes a draft article, not a paid ad).
+        goal: '面向开发者社区在知乎发布长文：解读云原生数据库选型陷阱，引导关注与免费 PoC。',
+        campaign_type: 'lead',
+        budget: { total: 5000, currency: 'CNY' },
+        kpi: { metric: 'CTR', target: 3.0 },
+        constraints: { channels: ['zhihu'], region: 'CN', url: 'https://example.com/blog/cloud-native-db' },
+        timeline: { duration_days: 14 },
       },
     };
 
@@ -428,6 +510,11 @@
         try {
           const resp = await o.api.createCampaign(seed);
           if (!resp?.success) throw new Error(typeof resp?.error === 'object' ? JSON.stringify(resp.error) : (resp?.error || 'unknown error'));
+          // Open the WS channel for this campaign so backend-driven events
+          // reach the in-browser EventBus (and therefore the Hub animations).
+          // The regular Launch modal does this inside hub._confirmLaunch; the
+          // harness skips that path, so we have to do it ourselves.
+          try { o.wsBroadcaster?.subscribe(resp.data.id, () => {}); } catch {}
           await o.api.startCampaign(resp.data.id);
           btn.textContent = '✅ launched';
         } catch (e) {

@@ -261,11 +261,31 @@ action: {
 }
 
 // ── Tab: Logs ──────────────────────────────────────────────────────
+let optimizerFetched = false;
 function renderLogs(panel) {
   const ctx = getCtx();
-  const history = (ctx.eventBus?.history || []).filter(e =>
+  const getHistory = () => (ctx.eventBus?.history || []).filter(e =>
     e.event_type === AGENT_EVENT || e.event_type === 'RuleFired'
   );
+  
+  if (!optimizerFetched && ctx.api?.getSystemEvents) {
+    optimizerFetched = true;
+    panel.innerHTML = `<div class="logs-view"><p class="muted">Loading historical logs...</p></div>`;
+    ctx.api.getSystemEvents(['OptimizationApplied', 'RuleFired']).then(remote => {
+      const existing = new Set((ctx.eventBus?.history || []).map(e => e.id));
+      let added = false;
+      remote.forEach(e => {
+        if (!existing.has(e.id)) { ctx.eventBus?.history.push(e); added = true; }
+      });
+      if (added) {
+        ctx.eventBus?.history.sort((a,b) => String(a.occurred_at).localeCompare(String(b.occurred_at)));
+        renderLogs(panel);
+      }
+    }).catch(() => renderLogs(panel));
+    return;
+  }
+
+  const history = getHistory();
   panel.innerHTML = `
     <div class="logs-view">
       ${history.length

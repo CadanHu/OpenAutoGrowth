@@ -15,7 +15,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.config import settings
 from app.core.event_bus import event_bus
-from app.core.llm import llm_client
+from app.core.llm import llm_client, current_agent_type
 from .state import CampaignState
 
 logger = structlog.get_logger(__name__)
@@ -163,6 +163,7 @@ async def content_gen_node(state: CampaignState) -> dict:
     LangGraph node: generate A/B copy variants via Claude.
     Incorporates feedback from Optimizer if in a loop.
     """
+    _at_token = current_agent_type.set("CONTENT_GEN")
     logger.info("content_gen_start", campaign_id=state["campaign_id"], loop=state.get("loop_count", 0))
 
     strategy = state.get("strategy") or {}

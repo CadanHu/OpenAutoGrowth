@@ -13,7 +13,7 @@ from typing import Optional
 
 from app.config import settings
 from app.core.event_bus import event_bus
-from app.core.llm import llm_client
+from app.core.llm import llm_client, current_agent_type
 from .state import CampaignState
 
 logger = structlog.get_logger(__name__)
@@ -23,6 +23,7 @@ _PLATFORM_SIZES: dict[str, list[str]] = {
     "tiktok":  ["9:16", "1:1"],
     "meta":    ["1:1", "4:5", "16:9"],
     "google":  ["16:9", "1:1"],
+    "wechat":  ["1:1", "16:9", "9:16"],
     "linkedin": ["1:1", "16:9"],
     "zhihu":   ["16:9"],
 }
@@ -113,6 +114,7 @@ async def _call_stability(prompt: str, size: str) -> Optional[str]:
 
 async def multimodal_node(state: CampaignState) -> dict:
     """LangGraph node: generate visual assets for each required platform size."""
+    _at_token = current_agent_type.set("MULTIMODAL")
     logger.info("multimodal_start", campaign_id=state["campaign_id"], loop=state.get("loop_count", 0))
 
     strategy = state.get("strategy") or {}
@@ -134,40 +136,87 @@ async def multimodal_node(state: CampaignState) -> dict:
     logger.info("multimodal_prompt_generated", prompt=visual_description[:50] + "...")
 
     assets = []
-    # 2. Generate images for each required size
+    # 2. Generate images for each required size.
+    # Generate the DB UUID up front so the in-memory id, the event payload,
+    # and the row in `content_assets` all share one identifier.
     for size in sizes:
-        asset_url = None
-        tool_used = "NONE"
-        
-        # Try DALL-E 3
+        asset_uuid = uuid.uuid4()
+
         asset_url = await _call_dalle3(visual_description, size)
-        if asset_url:
-            tool_used = "DALLE3"
-        else:
-            # Fallback to Stability
+        tool_used = "DALLE3" if asset_url else None
+        if not asset_url:
             asset_url = await _call_stability(visual_description, size)
-            if asset_url:
-                tool_used = "STABILITY_AI"
-            else:
-                # Mock fallback for development if no keys provided
-                asset_url = f"https://picsum.photos/seed/{uuid.uuid4().hex[:6]}/1024/1024"
-                tool_used = "MOCK_PICSUM"
+            tool_used = "STABILITY_AI" if asset_url else None
+        if not asset_url:
+            asset_url = f"https://picsum.photos/seed/{asset_uuid.hex[:6]}/1024/1024"
+            tool_used = "MOCK_PICSUM"
 
         assets.append({
-            "id": f"img_{uuid.uuid4().hex[:8]}",
-            "type": "IMAGE",
-            "visual_tool": tool_used,
-            "size": size,
-            "storage_url": asset_url,
+            "id":                f"img_{asset_uuid.hex[:8]}",
+            "_db_id":            asset_uuid,
+            "type":              "IMAGE",
+            "visual_tool":       tool_used,
+            "size":              size,
+            "storage_url":       asset_url,
             "generation_prompt": visual_description,
         })
 
+    # Pre-generate a real UUID for the bundle so the value emitted on the
+    # bus is always a valid UUID, even if persistence below is skipped.
+    bundle_uuid = uuid.uuid4()
     bundle = {
-        "bundle_id": f"asset_bundle_{uuid.uuid4().hex[:8]}",
-        "assets": assets,
+        "bundle_id": str(bundle_uuid),
+        "assets":    assets,
     }
 
-    # 3. Notify and Persist
+    # 3. Persistence Layer (best-effort — never block the pipeline on
+    # transient DB errors, but log loudly so we notice).
+    from app.database import async_session_factory
+    from app.models.content import ContentBundle, ContentAsset
+
+    campaign_id_str = state.get("campaign_id")
+    DEMO_UUID = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    try:
+        camp_uuid = DEMO_UUID if campaign_id_str == "demo" else uuid.UUID(campaign_id_str)
+    except (ValueError, TypeError) as e:
+        camp_uuid = None
+        logger.warning("multimodal_invalid_campaign_id",
+                       campaign_id=campaign_id_str, error=str(e))
+
+    if camp_uuid is not None:
+        async with async_session_factory() as db:
+            try:
+                new_bundle = ContentBundle(
+                    id=bundle_uuid,
+                    campaign_id=camp_uuid,
+                    generation_params={"sizes": sizes},
+                )
+                db.add(new_bundle)
+
+                allowed_tools = {"DALLE3", "MIDJOURNEY", "STABILITY_AI"}
+                for a in assets:
+                    new_asset = ContentAsset(
+                        id=a["_db_id"],
+                        bundle_id=bundle_uuid,
+                        campaign_id=camp_uuid,
+                        asset_type="IMAGE",
+                        visual_tool=a["visual_tool"] if a["visual_tool"] in allowed_tools else "DALLE3",
+                        storage_url=a["storage_url"],
+                        generation_prompt=a["generation_prompt"],
+                    )
+                    db.add(new_asset)
+
+                await db.commit()
+                logger.info("multimodal_persisted", bundle_id=str(bundle_uuid), assets=len(assets))
+            except Exception as e:
+                # Catch SQLAlchemy IntegrityError, OperationalError, etc.
+                # so an FK violation (e.g. unknown campaign in graph-only test
+                # runs) doesn't abort the rest of the pipeline.
+                await db.rollback()
+                logger.warning("multimodal_persistence_failed",
+                               bundle_id=str(bundle_uuid), error=str(e))
+
+    # 4. Notify and Finalize
     await event_bus.publish(
         "AssetsGenerated",
         {"asset_ids": [a["id"] for a in assets], "type": "IMAGE", "bundle_id": bundle["bundle_id"]},

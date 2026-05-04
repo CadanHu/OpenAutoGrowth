@@ -64,15 +64,28 @@ class Settings(BaseSettings):
 
     tiktok_app_id: str = Field(default="", alias="TIKTOK_APP_ID")
     tiktok_app_secret: str = Field(default="", alias="TIKTOK_APP_SECRET")
+    tiktok_access_token: str = Field(default="", alias="TIKTOK_ACCESS_TOKEN")
 
     google_ads_developer_token: str = Field(default="", alias="GOOGLE_ADS_DEVELOPER_TOKEN")
     google_ads_client_id: str = Field(default="", alias="GOOGLE_ADS_CLIENT_ID")
     google_ads_client_secret: str = Field(default="", alias="GOOGLE_ADS_CLIENT_SECRET")
     google_ads_refresh_token: str = Field(default="", alias="GOOGLE_ADS_REFRESH_TOKEN")
+    google_ads_access_token: str = Field(default="", alias="GOOGLE_ADS_ACCESS_TOKEN")
 
     # ── Zhihu ──────────────────────────────────────────────────────
     zhihu_cookie: str = Field(default="", alias="ZHIHU_COOKIE")
     zhihu_zst_81: str = Field(default="", alias="ZHIHU_ZST_81")
+
+    # ── WeChat Ads (Tencent Marketing API) ────────────────────────
+    wechat_ads_account_id: str = Field(default="", alias="WECHAT_ADS_ACCOUNT_ID")
+    wechat_ads_client_id: str = Field(default="", alias="WECHAT_ADS_CLIENT_ID")
+    wechat_ads_client_secret: str = Field(default="", alias="WECHAT_ADS_CLIENT_SECRET")
+    wechat_ads_access_token: str = Field(default="", alias="WECHAT_ADS_ACCESS_TOKEN")
+
+    # ── X (Twitter) ────────────────────────────────────────────────
+    x_client_id: str = Field(default="", alias="X_CLIENT_ID")
+    x_client_secret: str = Field(default="", alias="X_CLIENT_SECRET")
+    x_access_token: str = Field(default="", alias="X_ACCESS_TOKEN")
 
     # ── Image Generation ───────────────────────────────────────────
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")

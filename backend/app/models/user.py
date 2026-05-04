@@ -19,6 +19,7 @@ class Organization(Base):
 
     users: Mapped[list["User"]] = relationship("User", back_populates="organization")
     campaigns: Mapped[list["Campaign"]] = relationship("Campaign", back_populates="organization")
+    credentials: Mapped[list["PlatformCredential"]] = relationship("app.models.credential.PlatformCredential", back_populates="organization", cascade="all, delete-orphan")
 
 
 class User(Base):

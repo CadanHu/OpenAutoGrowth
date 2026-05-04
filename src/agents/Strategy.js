@@ -31,7 +31,7 @@ export class StrategyAgent {
         console.log(`[Strategy] 🎯 Building channel plan | Target: ${target}`);
         await this._simulateLatency(800);
 
-        const availableChannels = channels || ['tiktok', 'meta', 'google'];
+        const availableChannels = channels || ['tiktok', 'meta', 'google', 'wechat'];
         const scoredChannels = this._scoreChannels(availableChannels, target, kpi);
         const channelPlan = this._allocateBudget(scoredChannels, budget.total || 50000);
         const audienceConfig = this._buildAudience(target);

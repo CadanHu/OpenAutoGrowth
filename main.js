@@ -93,7 +93,10 @@ document.addEventListener('DOMContentLoaded', () => {
     .register('/',                       () => import('./src/ui/pages/hub.js'))
     .register('/campaigns',              () => import('./src/ui/pages/campaigns.js'))
     .register('/campaigns/:id',          () => import('./src/ui/pages/campaign-detail.js'))
+    .register('/integrations',           () => import('./src/ui/pages/integrations.js'))
+    .register('/integrations/:platform', () => import('./src/ui/pages/integration-manage.js'))
     .register('/agents/content-gen',     () => import('./src/ui/pages/agent-content-gen.js'))
+
     .register('/agents/optimizer',       () => import('./src/ui/pages/agent-optimizer.js'))
     .register('/agents/planner',         () => import('./src/ui/pages/agent-planner.js'))
     .register('/agents/analysis',        () => import('./src/ui/pages/agent-analysis.js'))

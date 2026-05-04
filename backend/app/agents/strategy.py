@@ -11,7 +11,7 @@ import structlog
 from typing import Any
 
 from app.core.event_bus import event_bus
-from app.core.llm import llm_client
+from app.core.llm import llm_client, current_agent_type
 from .state import CampaignState
 
 logger = structlog.get_logger(__name__)
@@ -65,6 +65,7 @@ def _get_fallback_plan(channels: list[str], total_budget: int) -> dict:
 
 async def strategy_node(state: CampaignState) -> dict:
     """LangGraph node: AI-driven decision on channel mix and budget split."""
+    _at_token = current_agent_type.set("STRATEGY")
     campaign_id = state.get("campaign_id", "unknown")
     logger.info("strategy_start", campaign_id=campaign_id, loop=state.get("loop_count", 0))
 

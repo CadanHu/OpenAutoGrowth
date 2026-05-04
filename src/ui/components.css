@@ -167,6 +167,34 @@ h3 { font-size: var(--fs-h3); line-height: var(--lh-heading); font-weight: var(-
 
 .nav-right { display: flex; align-items: center; gap: var(--sp-3); }
 
+.btn-pause-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px 5px 10px;
+  border-radius: var(--radius-full);
+  border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+  color: var(--warning);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: all var(--dur-fast) var(--ease-smooth);
+}
+.btn-pause-all:hover {
+  background: color-mix(in srgb, var(--warning) 18%, transparent);
+  border-color: color-mix(in srgb, var(--warning) 55%, transparent);
+}
+.btn-pause-all:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.btn-pause-all svg { width: 14px; height: 14px; }
+@media (max-width: 900px) {
+  .btn-pause-all .btn-pause-all-label { display: none; }
+}
+
 .lang-switcher {
   display: inline-flex;
   background: var(--bg-L2);
@@ -914,16 +942,20 @@ input[type=range] { accent-color: var(--accent-primary); }
 }
 .log-line {
   display: grid;
-  grid-template-columns: 80px 160px 1fr;
+  /* time | type | campaign-id | payload — payload gets the residual width
+     so a long event payload no longer wraps into 2-3-word stripes. */
+  grid-template-columns: 70px 170px 110px minmax(0, 1fr);
   gap: var(--sp-3);
   padding: 6px var(--sp-4);
   font-size: 12px;
   border-bottom: 1px dashed var(--border-subtle);
+  align-items: baseline;
 }
 .log-line:last-child { border-bottom: none; }
-.log-time { font-family: ui-monospace, Menlo, monospace; color: var(--text-tertiary); }
-.log-type { color: var(--text-primary); font-weight: var(--fw-medium); }
-.log-msg  { color: var(--text-secondary); }
+.log-time    { font-family: ui-monospace, Menlo, monospace; color: var(--text-tertiary); white-space: nowrap; }
+.log-type    { color: var(--text-primary); font-weight: var(--fw-medium); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.log-msg     { color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: ui-monospace, Menlo, monospace; }
+.log-payload { font-family: ui-monospace, Menlo, monospace; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 
 /* ── ContentGen Playground ─────────────────────────────────────── */
 .playground-results { margin-top: var(--sp-4); }
@@ -2062,7 +2094,7 @@ input[type=range] { accent-color: var(--accent-primary); }
 .campaign-row-headings,
 .campaign-row-head {
   display: grid;
-  grid-template-columns: 28px 140px 1fr 110px 110px 100px 60px 130px;
+  grid-template-columns: 28px 140px 1fr 110px 110px 100px 60px 130px 32px;
   gap: var(--sp-3);
   align-items: center;
 }
@@ -2110,6 +2142,96 @@ input[type=range] { accent-color: var(--accent-primary); }
   color: var(--text-secondary);
 }
 .campaign-row-last { white-space: nowrap; }
+.campaign-row-delete {
+  width: 28px; height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-tertiary);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-smooth),
+              color var(--dur-fast) var(--ease-smooth),
+              background var(--dur-fast) var(--ease-smooth),
+              border-color var(--dur-fast) var(--ease-smooth);
+}
+.campaign-row:hover .campaign-row-delete,
+.campaign-row.expanded .campaign-row-delete { opacity: 0.65; }
+.campaign-row-delete:hover {
+  opacity: 1;
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 35%, transparent);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+.campaign-row-delete:disabled {
+  opacity: 0.4;
+  cursor: progress;
+}
+.campaign-row.deleting { opacity: 0.5; pointer-events: none; }
+
+/* Rich event payload rendering inside campaign-flow rows */
+.cf-task-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.cf-task-item {
+  display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
+  font-size: 12px; padding: 4px 8px;
+  background: var(--bg-L1); border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+}
+
+.cf-rationale {
+  margin: 4px 0 0; padding: 8px 10px;
+  background: var(--bg-L1); border-left: 3px solid var(--accent-primary);
+  border-radius: 0 4px 4px 0; font-size: 12px; color: var(--text-secondary);
+  white-space: pre-wrap;
+}
+
+.cf-variant-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--sp-2); margin-top: 4px;
+}
+.cf-variant-card {
+  background: var(--bg-L1); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md); padding: 8px 10px;
+}
+.cf-variant-card header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+.cf-variant-label  { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--accent-primary); font-weight: var(--fw-semibold); }
+.cf-variant-title  { font-size: 13px; font-weight: var(--fw-semibold); color: var(--text-primary); margin-bottom: 2px; }
+.cf-variant-hook   { margin-bottom: 4px; }
+.cf-variant-body   { margin: 4px 0; font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+.cf-variant-cta    { font-size: 11px; color: var(--accent-primary); font-weight: var(--fw-medium); }
+
+.cf-asset-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--sp-2); margin-top: 4px;
+}
+.cf-asset { margin: 0; }
+.cf-asset img {
+  width: 100%; aspect-ratio: 1 / 1; object-fit: cover;
+  border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);
+  background: var(--bg-L2);
+  display: block;
+}
+.cf-asset-placeholder {
+  width: 100%; aspect-ratio: 1 / 1;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg-L2); color: var(--text-tertiary);
+  border-radius: var(--radius-sm); font-size: 11px;
+}
+.cf-asset figcaption { margin-top: 4px; font-size: 10px; }
+
+.cf-metric-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: var(--sp-2); margin-top: 4px;
+}
+.cf-metric { background: var(--bg-L1); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 6px 8px; }
+.cf-metric-val { font-family: ui-monospace, Menlo, monospace; font-size: 13px; color: var(--text-primary); margin-top: 2px; }
+
+.cf-raw { margin-top: var(--sp-2); }
+.cf-raw summary { cursor: pointer; padding: 2px 0; }
+.cf-raw[open] summary { color: var(--text-secondary); }
 
 .campaign-flow {
   padding: var(--sp-3) var(--sp-4) var(--sp-4);

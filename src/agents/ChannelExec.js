@@ -12,6 +12,11 @@ export class ChannelExecAgent {
             tiktok: new MockAdsAdapter('TikTok'),
             meta:   new MockAdsAdapter('Meta'),
             google: new MockAdsAdapter('Google'),
+            wechat: new MockAdsAdapter('WeChat'),
+            zhihu:  { 
+                createCampaign: async () => 'zhihu_article_draft',
+                createAd: async () => 'zhihu_post_stub'
+            }
         };
     }
 

@@ -1,7 +1,7 @@
 import httpx
 from bs4 import BeautifulSoup
 from typing import Dict, Any, Optional
-from app.core.llm import llm_client
+from app.core.llm import llm_client, current_agent_type
 from app.config import settings
 import logging
 import re
@@ -100,6 +100,7 @@ def _detect_anomalies(metrics: dict[str, float]) -> list[dict]:
 
 async def analysis_node(state: CampaignState) -> dict:
     """LangGraph node: pull metrics and detect anomalies."""
+    _at_token = current_agent_type.set("ANALYSIS")
     logger.info("analysis_start", campaign_id=state["campaign_id"])
     
     # Stub: simulated metrics for MVP

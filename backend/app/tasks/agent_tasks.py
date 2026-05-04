@@ -2,7 +2,9 @@
 ARQ async task definitions — long-running agent pipeline jobs.
 ARQ worker: `arq app.tasks.agent_tasks.WorkerSettings`
 """
+import json
 import uuid
+from datetime import datetime, date
 from typing import Any
 
 import structlog
@@ -13,6 +15,22 @@ from app.config import settings
 from app.core.event_bus import event_bus
 
 logger = structlog.get_logger(__name__)
+
+
+def _jsonb_safe(obj):
+    """Recursively convert non-serializable types (UUID, datetime, etc.) to strings
+    so payloads can be stored in PostgreSQL JSONB columns."""
+    if isinstance(obj, dict):
+        return {k: _jsonb_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_jsonb_safe(v) for v in obj]
+    if isinstance(obj, uuid.UUID):
+        return str(obj)
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    if isinstance(obj, bytes):
+        return obj.hex()
+    return obj
 
 
 # ── Lifecycle Hooks ──────────────────────────────────────────────────────────
@@ -35,6 +53,8 @@ async def run_campaign_pipeline(ctx: dict, campaign_id: str):
     """
     Full campaign pipeline: PLANNING → DEPLOYED → MONITORING → OPTIMIZING.
     Invokes the LangGraph StateGraph with PostgreSQL checkpointer.
+    After execution, persists all results (Plan, Tasks, DomainEvents, status)
+    back to the database.
     """
     # Robustness: ensure event_bus is connected in this worker process
     if not event_bus._redis:
@@ -44,7 +64,7 @@ async def run_campaign_pipeline(ctx: dict, campaign_id: str):
 
     from app.database import get_checkpointer, async_session_factory
     from app.agents.graph import build_campaign_graph
-    from app.models.campaign import Campaign
+    from app.models.campaign import Campaign, Plan, Task, DomainEvent
 
     async with async_session_factory() as db:
         campaign = await db.get(Campaign, uuid.UUID(campaign_id))
@@ -64,19 +84,196 @@ async def run_campaign_pipeline(ctx: dict, campaign_id: str):
             "completed_tasks":[],
         }
 
-    async with get_checkpointer() as checkpointer:
-        graph = build_campaign_graph(checkpointer)
-        config = {"configurable": {"thread_id": campaign_id}}
-        result = await graph.ainvoke(initial_state, config=config)
+    # Tag every llm_client.chat_completion call inside the graph with this
+    # campaign_id so token usage rows land in the right bucket. ContextVar
+    # is local to the running task; no cross-job leakage.
+    from app.core.llm import current_campaign_id
+    cv_token = current_campaign_id.set(campaign_id)
+    try:
+        async with get_checkpointer() as checkpointer:
+            graph = build_campaign_graph(checkpointer)
+            config = {"configurable": {"thread_id": campaign_id}}
+            result = await graph.ainvoke(initial_state, config=config)
+    finally:
+        current_campaign_id.reset(cv_token)
 
-    # Final status update to trigger frontend 'COMPLETED' (loop-back) visual
+    # ── Persist results back to DB ────────────────────────────────────────
     final_status = result.get("status", "COMPLETED")
-    if final_status == "OPTIMIZING":
-         # In the logic, OPTIMIZING means we finished a loop and KPI was met
-         # Let's broadcast COMPLETED to trigger the UI loop-back animation
-         await event_bus.publish("StatusChanged", {"old_status": "OPTIMIZING", "new_status": "COMPLETED"}, campaign_id)
+    # Map LangGraph internal status to DB-valid enum values
+    db_status = final_status
+    if db_status == "OPTIMIZING":
+        loop = result.get("loop_count", 1)
+        if loop <= 5:
+            db_status = f"LOOP_{loop}"
+        else:
+            db_status = "OPTIMIZING"
 
-    logger.info("campaign_pipeline_done", campaign_id=campaign_id, status=final_status)
+    completed_tasks = result.get("completed_tasks", [])
+
+    # Event-type/payload mapping is shared between the persistence block and
+    # the broadcast loop below, so define it at function scope.
+    event_map = {
+        "planner":      ("PlanGenerated",        lambda r: {"plan": r.get("plan", {}), "scenario": r.get("scenario", "")}),
+        "strategy":     ("StrategyDecided",      lambda r: {"strategy": r.get("strategy", {})}),
+        "content_gen":  ("ContentGenerated",     lambda r: {"bundle": r.get("content", {})}),
+        "multimodal":   ("AssetsGenerated",      lambda r: {"assets": r.get("assets", {})}),
+        "reviewer":     ("ContentApproved",      lambda r: {"review_result": r.get("review_result", ""), "feedback": r.get("review_feedback", "")}),
+        "channel_exec": ("AdDeployed",           lambda r: r.get("deployed_ads", {})),
+        "analysis":     ("ReportGenerated",      lambda r: r.get("report", {})),
+        "optimizer":    ("OptimizationApplied",  lambda r: {"actions": r.get("opt_actions", []), "loop_count": r.get("loop_count", 0)}),
+    }
+
+    old_status = "UNKNOWN"
+    persisted = False
+    try:
+        async with async_session_factory() as db:
+            campaign = await db.get(Campaign, uuid.UUID(campaign_id))
+            if not campaign:
+                logger.error("campaign_not_found_on_persist", campaign_id=campaign_id)
+                return result
+
+            # 1. Update campaign status and loop_count
+            old_status = campaign.status
+            campaign.status = db_status
+            campaign.loop_count = result.get("loop_count", 0)
+            db.add(campaign)
+
+            # 2. Persist the Plan and Tasks if planner produced them.
+            # `plans.scenario` is VARCHAR(50) — the LLM sometimes returns a long
+            # sentence here, so cap to 50 chars before INSERT (the full text
+            # is still preserved inside the JSONB `dag` column).
+            plan_data = result.get("plan")
+            if plan_data and plan_data.get("tasks"):
+                scenario_raw = (plan_data.get("scenario") or "DYNAMIC")
+                plan = Plan(
+                    campaign_id=campaign.id,
+                    scenario=str(scenario_raw)[:50],
+                    dag=_jsonb_safe(plan_data),
+                )
+                db.add(plan)
+                await db.flush()  # get plan.id
+
+                for t in plan_data["tasks"]:
+                    task = Task(
+                        plan_id=plan.id,
+                        campaign_id=campaign.id,
+                        task_key=str(t.get("id", ""))[:20],
+                        agent_type=t["agent_type"],
+                        dependencies=t.get("dependencies", []),
+                        params=t,
+                        status="DONE" if t["agent_type"].lower().replace("_", "") in
+                               [c.lower().replace("_", "") for c in completed_tasks] else "PENDING",
+                    )
+                    db.add(task)
+
+            # 3. Record DomainEvents for each completed pipeline stage,
+            #    enriched with LLM token usage per agent.
+            from app.models.usage import LLMUsage
+            from app.core.llm import estimate_cost_usd
+            from sqlalchemy import select as sa_select
+
+            # Map task_name to agent_type strings stored in llm_usage
+            _AGENT_TYPE_MAP = {
+                "planner":      "PLANNER",
+                "strategy":     "STRATEGY",
+                "content_gen":  "CONTENT_GEN",
+                "multimodal":   "MULTIMODAL",
+                "reviewer":     "REVIEWER",
+                "channel_exec": "CHANNEL_EXEC",
+                "analysis":     "ANALYSIS",
+                "optimizer":    "OPTIMIZER",
+            }
+
+            # Fetch all usage rows for this campaign in one query
+            all_usage_rows = (await db.execute(
+                sa_select(LLMUsage).where(LLMUsage.campaign_id == campaign.id)
+            )).scalars().all()
+
+            # Group by agent_type
+            usage_by_agent: dict[str, list] = {}
+            for row in all_usage_rows:
+                usage_by_agent.setdefault(row.agent_type or "UNKNOWN", []).append(row)
+
+            for task_name in completed_tasks:
+                if task_name in event_map:
+                    event_type, payload_fn = event_map[task_name]
+                    try:
+                        payload = _jsonb_safe(payload_fn(result))
+                    except Exception:
+                        payload = {}
+
+                    # Attach LLM usage summary for this agent step
+                    agent_key = _AGENT_TYPE_MAP.get(task_name)
+                    agent_rows = usage_by_agent.get(agent_key, [])
+                    if agent_rows:
+                        total_in = sum(r.input_tokens or 0 for r in agent_rows)
+                        total_out = sum(r.output_tokens or 0 for r in agent_rows)
+                        models_used = list(set(r.model for r in agent_rows if r.model))
+                        providers_used = list(set(r.provider for r in agent_rows if r.provider))
+                        total_cost = sum(
+                            estimate_cost_usd(r.provider, r.model, r.input_tokens or 0, r.output_tokens or 0)
+                            for r in agent_rows
+                        )
+                        payload["llm_usage"] = {
+                            "calls": len(agent_rows),
+                            "models": models_used,
+                            "providers": providers_used,
+                            "input_tokens": total_in,
+                            "output_tokens": total_out,
+                            "total_tokens": total_in + total_out,
+                            "estimated_cost_usd": round(total_cost, 6),
+                        }
+
+                    db.add(DomainEvent(
+                        campaign_id=campaign.id,
+                        event_type=event_type,
+                        payload=payload,
+                    ))
+
+            # 4. Final StatusChanged event
+            db.add(DomainEvent(
+                campaign_id=campaign.id,
+                event_type="StatusChanged",
+                payload={"old_status": old_status, "new_status": db_status},
+            ))
+
+            await db.commit()
+            persisted = True
+            logger.info("campaign_results_persisted", campaign_id=campaign_id,
+                        status=db_status, events_written=len(completed_tasks) + 1)
+    except Exception as e:
+        # Persistence failure must not kill the broadcast — clients are still
+        # waiting on the WS for the final StatusChanged.
+        logger.exception("campaign_persist_failed", campaign_id=campaign_id, error=str(e))
+        # Best-effort: at least flip the campaign row's status so the UI
+        # stops showing PLANNING forever.
+        try:
+            async with async_session_factory() as db2:
+                camp = await db2.get(Campaign, uuid.UUID(campaign_id))
+                if camp:
+                    old_status = old_status if old_status != "UNKNOWN" else camp.status
+                    camp.status = db_status
+                    camp.loop_count = result.get("loop_count", 0)
+                    db2.add(camp)
+                    await db2.commit()
+        except Exception as e2:
+            logger.warning("campaign_status_fallback_failed", error=str(e2))
+
+    # ── Broadcast to frontend via EventBus ────────────────────────────────
+    # Publish each event so WebSocket-connected clients see real-time updates
+    for task_name in completed_tasks:
+        if task_name in event_map:
+            event_type, payload_fn = event_map[task_name]
+            try:
+                await event_bus.publish(event_type, _jsonb_safe(payload_fn(result)), campaign_id)
+            except Exception as e:
+                logger.warning("event_broadcast_failed", event=event_type, error=str(e))
+
+    # Final status broadcast
+    broadcast_status = "COMPLETED" if final_status == "OPTIMIZING" else db_status
+    await event_bus.publish("StatusChanged", {"old_status": old_status, "new_status": broadcast_status}, campaign_id)
+
+    logger.info("campaign_pipeline_done", campaign_id=campaign_id, status=db_status)
     return result
 
 

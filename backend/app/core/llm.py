@@ -1,11 +1,85 @@
 import json
+import time
+import uuid
+from contextvars import ContextVar
 from typing import Any, Optional
+
 import structlog
 import httpx
 from anthropic import AsyncAnthropic
 from app.config import settings
 
 logger = structlog.get_logger(__name__)
+
+# Per-task contextvars set by the worker so every chat_completion under a
+# given LangGraph node automatically gets tagged with the right campaign /
+# agent. Avoids threading campaign_id through every agent's call site.
+current_campaign_id: ContextVar[Optional[str]] = ContextVar("current_campaign_id", default=None)
+current_agent_type: ContextVar[Optional[str]] = ContextVar("current_agent_type", default=None)
+
+
+# Per-1M-token USD pricing. Lookup falls through provider-default ('*') if
+# the model isn't listed. Numbers are rough vendor list prices and should be
+# updated as terms change; consumers can also pass `cost_per_1m=(in,out)` to
+# `estimate_cost` to override.
+PRICING_PER_1M: dict[tuple[str, str], tuple[float, float]] = {
+    ("anthropic", "claude-3-5-sonnet"):       (3.00, 15.00),
+    ("anthropic", "claude-3-5-haiku"):        (0.80, 4.00),
+    ("anthropic", "claude-3-opus"):           (15.00, 75.00),
+    ("anthropic", "*"):                       (3.00, 15.00),
+    ("deepseek",  "deepseek-chat"):           (0.14, 0.28),
+    ("deepseek",  "deepseek-reasoner"):       (0.55, 2.19),
+    ("deepseek",  "*"):                       (0.14, 0.28),
+    ("gemini",    "*"):                       (0.10, 0.40),
+    ("qwen",      "*"):                       (0.40, 1.20),
+    ("zhipu",     "*"):                       (0.30, 0.90),
+}
+
+
+def estimate_cost_usd(provider: str, model: str, input_tokens: int, output_tokens: int) -> float:
+    """Estimate USD cost for a single call. Falls back to provider default."""
+    key_specific = (provider, model)
+    key_default  = (provider, "*")
+    rates = PRICING_PER_1M.get(key_specific) or PRICING_PER_1M.get(key_default) or (0.0, 0.0)
+    in_rate, out_rate = rates
+    return (input_tokens / 1_000_000.0) * in_rate + (output_tokens / 1_000_000.0) * out_rate
+
+
+async def _record_usage(
+    provider: str, model: str, input_tokens: int, output_tokens: int, latency_ms: int
+) -> None:
+    """Persist one usage row tagged with the current campaign (if any).
+
+    Best-effort: any DB error is logged and swallowed so a usage write
+    failure never breaks the actual LLM call.
+    """
+    cid = current_campaign_id.get()
+    if not cid:
+        return  # not running inside a worker job — skip persistence
+    try:
+        # Local import to avoid circular deps at module load time.
+        from app.database import async_session_factory
+        from app.models.usage import LLMUsage
+
+        try:
+            cid_uuid = uuid.UUID(cid)
+        except (ValueError, TypeError):
+            return
+
+        async with async_session_factory() as db:
+            db.add(LLMUsage(
+                campaign_id=cid_uuid,
+                provider=provider[:40],
+                model=(model or "")[:100],
+                input_tokens=int(input_tokens or 0),
+                output_tokens=int(output_tokens or 0),
+                latency_ms=latency_ms,
+                agent_type=(current_agent_type.get() or None),
+            ))
+            await db.commit()
+    except Exception as exc:
+        logger.warning("llm_usage_persist_failed", error=str(exc))
+
 
 class LLMClient:
     """
@@ -84,6 +158,7 @@ class LLMClient:
                 system,
                 model or settings.deepseek_model,
                 max_tokens,
+                provider_name="deepseek",
             )
         elif provider == "qwen":
             return await self._openai_compatible_completion(
@@ -93,6 +168,7 @@ class LLMClient:
                 system,
                 model or settings.qwen_model,
                 max_tokens,
+                provider_name="qwen",
             )
         elif provider == "zhipu":
             return await self._openai_compatible_completion(
@@ -102,6 +178,7 @@ class LLMClient:
                 system,
                 model or settings.zhipu_model,
                 max_tokens,
+                provider_name="zhipu",
             )
         elif provider == "gemini":
             return await self._openai_compatible_completion(
@@ -111,6 +188,7 @@ class LLMClient:
                 system,
                 model or settings.gemini_model,
                 max_tokens,
+                provider_name="gemini",
             )
         else:
             raise ValueError(f"Unsupported provider: {provider}")
@@ -119,18 +197,29 @@ class LLMClient:
         resolved_model = model or settings.anthropic_model
         logger.info("llm_request", provider="anthropic", model=resolved_model,
                     system=system, messages=messages)
+        t0 = time.monotonic()
         response = await self.anthropic.messages.create(
             model=resolved_model,
             max_tokens=max_tokens or settings.anthropic_max_tokens,
             system=system,
             messages=messages,
         )
+        latency_ms = int((time.monotonic() - t0) * 1000)
         result = response.content[0].text
+
+        # Anthropic SDK exposes usage as response.usage.{input_tokens, output_tokens}
+        usage = getattr(response, "usage", None)
+        in_tok  = int(getattr(usage, "input_tokens",  0) or 0)
+        out_tok = int(getattr(usage, "output_tokens", 0) or 0)
+        await _record_usage("anthropic", resolved_model, in_tok, out_tok, latency_ms)
+
         logger.info("llm_response", provider="anthropic", model=resolved_model,
-                    response=result)
+                    response=result, input_tokens=in_tok, output_tokens=out_tok)
         return result
 
-    async def _openai_compatible_completion(self, base_url, api_key, messages, system, model, max_tokens):
+    async def _openai_compatible_completion(
+        self, base_url, api_key, messages, system, model, max_tokens, provider_name=None
+    ):
         # NOTE: Timeout must be 180s for long technical articles
         async with httpx.AsyncClient(timeout=180.0) as client:
             full_messages = []
@@ -155,14 +244,24 @@ class LLMClient:
                 else:
                     url = url.rstrip("/") + "/chat/completions"
 
-            logger.info("llm_request", provider=url.split("/")[2], model=model,
+            host = url.split("/")[2]
+            prov = provider_name or host
+            logger.info("llm_request", provider=host, model=model,
                         messages=full_messages)
+            t0 = time.monotonic()
             response = await client.post(url, json=payload, headers=headers)
             response.raise_for_status()
+            latency_ms = int((time.monotonic() - t0) * 1000)
             data = response.json()
             result = data["choices"][0]["message"]["content"]
-            logger.info("llm_response", provider=url.split("/")[2], model=model,
-                        response=result)
+
+            usage = data.get("usage") or {}
+            in_tok  = int(usage.get("prompt_tokens")     or usage.get("input_tokens")  or 0)
+            out_tok = int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
+            await _record_usage(prov, model, in_tok, out_tok, latency_ms)
+
+            logger.info("llm_response", provider=host, model=model,
+                        response=result, input_tokens=in_tok, output_tokens=out_tok)
             return result
 
 llm_client = LLMClient()

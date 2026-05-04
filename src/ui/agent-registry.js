@@ -65,7 +65,7 @@ export const AGENTS = {
     id: 'channel-exec',
     name: 'ChannelExec',
     nameKey: 'agent_channelexec_name',
-    description: '多渠道 API 执行：Meta / Google / TikTok / 知乎。',
+    description: '多渠道 API 执行：Meta / Google / TikTok / 微信 / 知乎。',
     descriptionKey: 'agent_channelexec_desc',
     color: 'var(--agent-channelexec)',
     icon: 'radio-tower',

@@ -12,7 +12,7 @@ from typing import Any
 
 from app.core.event_bus import event_bus
 from app.core.rule_engine import rule_engine
-from app.core.llm import llm_client
+from app.core.llm import llm_client, current_agent_type
 from .state import CampaignState
 
 logger = structlog.get_logger(__name__)
@@ -49,6 +49,7 @@ Output (Strict JSON):
 
 async def optimizer_node(state: CampaignState) -> dict:
     """LangGraph node: hybrid AI + Rules optimization."""
+    _at_token = current_agent_type.set("OPTIMIZER")
     campaign_id = state["campaign_id"]
     loop_count = state.get("loop_count", 0)
     logger.info("optimizer_start", campaign_id=campaign_id, loop=loop_count)
@@ -139,11 +140,36 @@ async def optimizer_node(state: CampaignState) -> dict:
     }
 
 
-def should_loop(state: CampaignState) -> str:
+async def _is_paused(campaign_id: str | None) -> bool:
+    """Check the cooperative pause flag set by /v1/campaigns/{id}/pause.
+
+    Best-effort: any Redis error returns False so a transient infra
+    blip doesn't accidentally short-circuit a healthy run.
+    """
+    if not campaign_id:
+        return False
+    try:
+        from app.core.event_bus import event_bus
+        if not event_bus._redis:
+            await event_bus.connect()
+        val = await event_bus._redis.get(f"oag:campaign:{campaign_id}:paused")
+        return bool(val)
+    except Exception:
+        return False
+
+
+async def should_loop(state: CampaignState) -> str:
     """
     Conditional edge function: determines WHERE to loop back based on action types.
     Returns: "loop_strategy" | "loop_content" | "loop_exec" | "done"
     """
+    # Cooperative pause: if the API set the pause flag, exit cleanly at this
+    # loop boundary instead of starting another iteration. The campaign row
+    # has already been transitioned to PAUSED; we just stop the worker.
+    if await _is_paused(state.get("campaign_id")):
+        logger.info("optimizer_paused_externally", campaign_id=state.get("campaign_id"))
+        return "done"
+
     if state.get("loop_count", 0) >= MAX_LOOPS:
         logger.info("optimizer_max_loops_reached")
         return "done"

@@ -38,6 +38,31 @@ const PIPELINE_STATE = {
   COMPLETED:  { nodes: ['node-orchestrator','node-planner','node-strategy','node-contentgen','node-multimodal','node-reviewer','node-channelexec','node-analysis','node-optimizer'], edges: ['edge-1', ...PRODUCTION_EDGES, ...REVIEW_EDGES, 'edge-4', 'edge-5', 'edge-6'] },
 };
 
+// Forward-progress ranks. Per-domain-event handlers below use this to advance
+// the canvas one stage at a time without regressing — e.g. when ContentGenerated
+// arrives AFTER AssetsGenerated (parallel branches), CONTENT_GEN (rank 3) must
+// not overwrite the already-applied MULTIMODAL (rank 4).
+const PIPELINE_RANK = {
+  IDLE: 0, DRAFT: 0,
+  PLANNING: 1,
+  STRATEGY: 2,
+  CONTENT_GEN: 3,
+  MULTIMODAL: 4,
+  PENDING_REVIEW: 5,
+  PRODUCTION: 5,
+  EXECUTING: 6, DEPLOYED: 6,
+  MONITORING: 7, ANALYZING: 7,
+  OPTIMIZING: 8,
+  COMPLETED: 9,
+};
+
+// Backend campaign_status enum can be LOOP_1..LOOP_5 mid-pipeline; map them
+// onto the canvas state set so the OPTIMIZING ring lights up correctly.
+function normalizePipelineStatus(status) {
+  if (typeof status === 'string' && status.startsWith('LOOP_')) return 'OPTIMIZING';
+  return status;
+}
+
 // ══════════════════════════════════════════════════════════════════
 // Template
 // ══════════════════════════════════════════════════════════════════
@@ -283,40 +308,55 @@ class Hub {
       this.currentStatus = new_status;
       this._updateStripState(new_status);
       this._updateCampaignBadge(new_status);
-      this._updatePipeline(new_status);
+      // StatusChanged is authoritative — let it override the canvas (e.g. so
+      // PAUSED / COMPLETED / FAILED can reset or finalize). LOOP_N maps to
+      // OPTIMIZING.
+      this._updatePipeline(normalizePipelineStatus(new_status));
       this._updateAgentCard('orchestrator', { metric: new_status, label: i18n.t('metric_state'), event: i18n.t('event_just_now') });
     });
 
     sub('ReviewCompleted', ({ payload }) => {
       this.lastReviewStatus = payload?.status;
+      this._advancePipeline('PENDING_REVIEW');
     });
 
     sub('PlanGenerated', ({ payload: { plan } }) => {
       this.log(i18n.t('log_planner_dag', { n: plan.tasks.length, s: plan.scenario }), 'info');
       this._updateAgentCard('planner', { metric: plan.tasks.length, label: i18n.t('metric_tasks'), event: plan.scenario });
+      this._advancePipeline('PLANNING');
     });
 
     sub('StrategyDecided', ({ payload: { strategy } }) => {
       const channels = strategy.channel_plan?.map(c => c.channel).join(', ');
       this.log(i18n.t('log_strategy_decided', { channels }), 'info');
       this._updateAgentCard('strategy', { metric: strategy.channel_plan?.length || 0, label: i18n.t('metric_channels'), event: channels || '—' });
+      this._advancePipeline('STRATEGY');
     });
 
     sub('ContentGenerated', ({ payload: { bundle } }) => {
       const count = bundle?.variants?.length || 0;
       this.log(i18n.t('log_content_gen', { n: count }), 'success');
       this._updateAgentCard('content-gen', { metric: count, label: i18n.t('metric_variants'), event: i18n.t('event_just_now') });
+      this._advancePipeline('CONTENT_GEN');
     });
 
     sub('AssetsGenerated', ({ payload: { asset_ids, type } }) => {
       this.log(i18n.t('log_assets_gen', { n: asset_ids.length, type }), 'success');
       this._updateAgentCard('multimodal', { metric: asset_ids.length, label: i18n.t('metric_assets'), event: type });
+      this._advancePipeline('MULTIMODAL');
+    });
+
+    // Backend emits "ContentApproved" via the reviewer; treat it like a
+    // PENDING_REVIEW → review-passed transition for the canvas.
+    sub('ContentApproved', () => {
+      this._advancePipeline('PENDING_REVIEW');
     });
 
     sub('AdDeployed', ({ payload }) => {
       const platforms = payload.platforms?.join(', ') || '';
       this.log(i18n.t('log_ads_deployed', { platforms }), 'success');
       this._updateAgentCard('channel-exec', { metric: (payload.platforms?.length ?? 0), label: i18n.t('metric_platforms'), event: platforms });
+      this._advancePipeline('DEPLOYED');
     });
 
     sub('ReportGenerated', ({ payload }) => {
@@ -324,18 +364,30 @@ class Hub {
       this.log(i18n.t('log_analytics_report', { roas: roas?.toFixed(2), ctr: ((ctr ?? 0) * 100).toFixed(2) }), 'info');
       const pct = `+${((roas - 1) * 100)?.toFixed(1)}%`;
       this._updateAgentCard('analysis', { metric: pct, label: i18n.t('metric_roi'), event: `CTR ${((ctr ?? 0) * 100).toFixed(1)}%` });
+      this._advancePipeline('ANALYZING');
     });
 
     sub('OptimizationApplied', ({ payload }) => {
       const types = payload.actions?.map(a => a.type).join(', ') || 'NONE';
       this.log(i18n.t('log_optimizer_fired', { types }), 'warning');
       this._updateAgentCard('optimizer', { metric: `#${payload.loop_count ?? 0}`, label: i18n.t('metric_cycle'), event: types });
+      this._advancePipeline('OPTIMIZING');
     });
 
     sub('AnomalyDetected', ({ payload }) => {
       this.log(i18n.t('log_anomaly_detected', { metric: payload.metric, channel: payload.channel, severity: payload.severity }), 'error');
       this._updateStripHealth('warning');
     });
+  }
+
+  // Forward-only pipeline advance. Drops events that would regress the canvas
+  // (matters when content-gen and multimodal run in parallel and arrive
+  // out-of-order, or when a duplicate is replayed by the end-of-run broadcast).
+  _advancePipeline(stage) {
+    const next = PIPELINE_RANK[stage];
+    if (next == null) return;
+    const cur = PIPELINE_RANK[normalizePipelineStatus(this.currentStatus)] ?? 0;
+    if (next > cur) this._updatePipeline(stage);
   }
 
   _startPolling() {
@@ -606,37 +658,37 @@ class Hub {
       case 'campaign.status_changed':
         this._updateCampaignBadge(payload.new_status);
         this._updateStripState(payload.new_status);
-        this._updatePipeline(payload.new_status);
+        this._updatePipeline(normalizePipelineStatus(payload.new_status));
         break;
       case 'campaign.plan_ready':
-        this._updatePipeline('PLANNING');
+        this._advancePipeline('PLANNING');
         this._updateAgentCard('planner', { metric: payload.plan?.tasks?.length ?? 0, label: i18n.t('metric_tasks'), event: payload.plan?.scenario || '—' });
         break;
       case 'task.content_generated':
-        this._updatePipeline('CONTENT_GEN');
+        this._advancePipeline('CONTENT_GEN');
         this._updateAgentCard('content-gen', { metric: payload.bundle?.variants?.length ?? 0, label: i18n.t('metric_variants'), event: i18n.t('event_just_now') });
         break;
       case 'task.assets_generated':
-        this._updatePipeline('MULTIMODAL');
+        this._advancePipeline('MULTIMODAL');
         this._updateAgentCard('multimodal', { metric: payload.asset_ids?.length ?? 0, label: i18n.t('metric_assets'), event: payload.type });
         break;
       case 'task.strategy_decided':
-        this._updatePipeline('STRATEGY');
+        this._advancePipeline('STRATEGY');
         this._updateAgentCard('strategy', { metric: payload.strategy?.channel_plan?.length ?? 0, label: i18n.t('metric_channels'), event: payload.strategy?.channel_plan?.map(c => c.channel).join(', ') });
         break;
       case 'task.ad_deployed':
-        this._updatePipeline('DEPLOYED');
+        this._advancePipeline('DEPLOYED');
         this._updateAgentCard('channel-exec', { metric: payload.platforms?.length ?? 0, label: i18n.t('metric_platforms'), event: payload.platforms?.join(', ') });
         break;
       case 'metrics.updated': {
-        this._updatePipeline('ANALYZING');
+        this._advancePipeline('ANALYZING');
         const roas = payload.metrics?.roas;
         const pct = roas != null ? `+${((roas - 1) * 100).toFixed(1)}%` : '—';
         this._updateAgentCard('analysis', { metric: pct, label: i18n.t('metric_roi'), event: `CTR ${((payload.metrics?.ctr ?? 0) * 100).toFixed(1)}%` });
         break;
       }
       case 'optimization.applied': {
-        this._updatePipeline('OPTIMIZING');
+        this._advancePipeline('OPTIMIZING');
         const types = payload.actions?.map(a => a.type).join(', ') || 'NONE';
         this._updateAgentCard('optimizer', { metric: `#${payload.loop_count ?? 0}`, label: i18n.t('metric_cycle'), event: types });
         break;

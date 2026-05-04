@@ -345,7 +345,24 @@ function renderRunRow(event) {
 
 // ── Tab: Logs ─────────────────────────────────────────────────────
 function renderLogs(panel) {
-  function paint() {
+  let fetched = false;
+  async function paint() {
+    const ctx = getCtx();
+    if (!fetched && ctx.api?.getSystemEvents) {
+      fetched = true;
+      try {
+        const remote = await ctx.api.getSystemEvents();
+        const existing = new Set((ctx.eventBus?.history || []).map(e => e.id));
+        let added = false;
+        remote.forEach(e => {
+          if (!existing.has(e.id)) { ctx.eventBus?.history.push(e); added = true; }
+        });
+        if (added) {
+           ctx.eventBus?.history.sort((a,b) => String(a.occurred_at).localeCompare(String(b.occurred_at)));
+           return paint();
+        }
+      } catch(e) {}
+    }
     const events = (getCtx().eventBus?.history || []).filter(e =>
       e.event_type === 'ReportGenerated' || e.event_type === 'AnomalyDetected'
     );

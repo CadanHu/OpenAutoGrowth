@@ -47,11 +47,11 @@ MCP_TOOLS = [
     },
     {
         "name": "ad_api_deploy",
-        "description": "调用广告平台 API 创建并投放广告（Meta / TikTok / Google）",
+        "description": "调用广告平台 API 创建并投放广告（Meta / TikTok / Google / WeChat）",
         "input_schema": {
             "type": "object",
             "properties": {
-                "platform":  {"type": "string", "enum": ["meta", "tiktok", "google"]},
+                "platform":  {"type": "string", "enum": ["meta", "tiktok", "google", "wechat"]},
                 "ad_config": {"type": "object", "description": "Platform-specific ad config"},
             },
             "required": ["platform", "ad_config"],
@@ -63,7 +63,7 @@ MCP_TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "platform":    {"type": "string", "enum": ["meta", "tiktok", "google"]},
+                "platform":    {"type": "string", "enum": ["meta", "tiktok", "google", "wechat"]},
                 "ad_ids":      {"type": "array", "items": {"type": "string"}},
                 "date_range":  {"type": "object", "properties": {
                     "from": {"type": "string"}, "to": {"type": "string"}
@@ -127,8 +127,54 @@ async def _db_get_campaign(campaign_id: str, db) -> dict:
 
 
 async def _db_save_content_bundle(input_: dict, db) -> dict:
-    # TODO: implement DB write
-    return {"bundle_id": "stub", "saved": True}
+    """
+    Save ContentBundle and Copy variants to the database.
+    input_: { campaign_id, variants, llm_model, generation_params? }
+    """
+    if db is None:
+        return {"error": "database_not_available"}
+
+    import uuid
+    from app.models.content import ContentBundle, Copy
+
+    try:
+        campaign_id = uuid.UUID(input_["campaign_id"])
+        bundle_id = uuid.uuid4()
+
+        new_bundle = ContentBundle(
+            id=bundle_id,
+            campaign_id=campaign_id,
+            llm_model=input_.get("llm_model", "unknown"),
+            generation_params=input_.get("generation_params", {}),
+        )
+        db.add(new_bundle)
+
+        for var in input_["variants"]:
+            new_copy = Copy(
+                id=uuid.uuid4(),
+                bundle_id=bundle_id,
+                campaign_id=campaign_id,
+                variant_label=var.get("variant_label", "A"),
+                hook=var.get("title") or var.get("hook") or "Untitled",
+                body=var.get("body"),
+                cta=var.get("cta"),
+                channel=var.get("channel"),
+                status="GENERATED"
+            )
+            db.add(new_copy)
+
+        # Note: commit is usually handled by the caller or get_db dependency,
+        # but if we're in a standalone tool call, we might want to flush/commit.
+        await db.flush()
+        
+        return {
+            "bundle_id": str(bundle_id),
+            "variant_count": len(input_["variants"]),
+            "status": "SAVED"
+        }
+    except Exception as e:
+        logger.error("mcp_save_bundle_failed", error=str(e))
+        return {"error": str(e)}
 
 
 async def _ad_api_deploy(input_: dict) -> dict:

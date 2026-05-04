@@ -21,6 +21,7 @@ export class AppShell {
     this._renderFooter();
     this._bindNav();
     this._bindLang();
+    this._bindPauseAll();
     this._highlightCurrent(router.current_path());
 
     document.addEventListener('routeChanged', (e) => {
@@ -33,6 +34,7 @@ export class AppShell {
       this._renderFooter();
       this._bindNav();
       this._bindLang();
+      this._bindPauseAll();
       this._highlightCurrent(router.current_path());
     });
   }
@@ -76,9 +78,16 @@ export class AppShell {
             </div>
           </div>
           <a class="nav-link" href="#/campaigns" data-route="/campaigns">${i18n.t('nav_campaigns') || 'Campaigns'}</a>
+          <a class="nav-link" href="#/integrations" data-route="/integrations">${i18n.t('nav_integrations') || 'Integrations'}</a>
         </nav>
 
         <div class="nav-right">
+          <button id="btn-pause-all"
+                  class="btn-pause-all"
+                  title="${i18n.t('shell_pause_all_title') || 'Pause every running campaign'}">
+            ${icon('pause', 'sm')}
+            <span class="btn-pause-all-label">${i18n.t('shell_pause_all') || 'Pause all'}</span>
+          </button>
           <div class="lang-switcher" role="tablist">
             <button id="btn-lang-zh" class="lang-btn ${locale === 'zh' ? 'active' : ''}" role="tab" aria-selected="${locale === 'zh'}">ZH</button>
             <button id="btn-lang-en" class="lang-btn ${locale === 'en' ? 'active' : ''}" role="tab" aria-selected="${locale === 'en'}">EN</button>
@@ -123,6 +132,110 @@ export class AppShell {
   _bindLang() {
     document.getElementById('btn-lang-zh')?.addEventListener('click', () => i18n.setLocale('zh'));
     document.getElementById('btn-lang-en')?.addEventListener('click', () => i18n.setLocale('en'));
+  }
+
+  _bindPauseAll() {
+    const btn = document.getElementById('btn-pause-all');
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+      const oag = window.OAG;
+      const api = oag?.api;
+      if (!api?.listCampaigns || !api?.pauseCampaign) return;
+
+      const PAUSEABLE_STATES = new Set(['DEPLOYED', 'MONITORING', 'OPTIMIZING']);
+      const isPauseable = (s) =>
+        PAUSEABLE_STATES.has(s) || (typeof s === 'string' && s.startsWith('LOOP_'));
+
+      btn.disabled = true;
+      const label = btn.querySelector('.btn-pause-all-label');
+      const original = label?.textContent;
+      if (label) label.textContent = i18n.t('shell_pause_all_running') || 'Pausing…';
+
+      try {
+        const resp = await api.listCampaigns({ limit: 100 });
+        if (!resp?.success) throw new Error(resp?.error || 'list failed');
+
+        const items = resp.data?.items || [];
+        const targets = items.filter(c => isPauseable(c.status));
+
+        if (targets.length === 0) {
+          if (label) label.textContent = i18n.t('shell_pause_all_none') || 'Nothing running';
+          setTimeout(() => { if (label) label.textContent = original; btn.disabled = false; }, 1600);
+          return;
+        }
+
+        const confirmMsg = (i18n.t('shell_pause_all_confirm')
+          || 'Pause {n} running campaign(s)? Their pipelines will halt until resumed.'
+        ).replace('{n}', targets.length);
+        if (!window.confirm(confirmMsg)) {
+          if (label) label.textContent = original;
+          btn.disabled = false;
+          return;
+        }
+
+        const results = await Promise.all(targets.map(async (c) => {
+          try {
+            const r = await api.pauseCampaign(c.id);
+            return { id: c.id, status: c.status, ok: !!r?.success, error: r?.error };
+          } catch (e) {
+            return { id: c.id, status: c.status, ok: false, error: e?.message || String(e) };
+          }
+        }));
+
+        const okResults = results.filter(r => r.ok);
+        const failedResults = results.filter(r => !r.ok);
+
+        // Optimistically reflect into the in-browser orchestrator map so any
+        // currently-mounted page (Hub strip, /campaigns row, Orchestrator FSM)
+        // re-paints with PAUSED before the WS event lands.
+        try {
+          const map = oag?.orchestrator?.campaigns;
+          if (map?.set) {
+            okResults.forEach(r => {
+              const entry = map.get(r.id);
+              if (entry) { entry.status = 'PAUSED'; map.set(r.id, entry); }
+            });
+          }
+        } catch {}
+
+        // Surface failures with their actual server error so the user
+        // doesn't see a green "paused" toast when nothing actually paused.
+        if (failedResults.length > 0) {
+          const summary = failedResults
+            .map(r => `${r.id.slice(0,8)} (${r.status}): ${r.error || 'unknown'}`)
+            .join('\n');
+          console.warn('[shell] pause-all partial failure', failedResults);
+          if (okResults.length === 0) {
+            // Nothing actually paused — be loud.
+            alert(
+              (i18n.t('shell_pause_all_all_failed')
+                || 'Could not pause any campaign. Server said:\n\n')
+              + summary
+            );
+          } else {
+            // Some succeeded — show a non-blocking notice.
+            alert(
+              (i18n.t('shell_pause_all_some_failed')
+                || 'Paused {ok} of {total}. Failures:\n\n')
+                .replace('{ok}', okResults.length)
+                .replace('{total}', results.length)
+              + summary
+            );
+          }
+        }
+
+        if (label) {
+          label.textContent = failedResults.length > 0
+            ? `${okResults.length}/${results.length} ${i18n.t('shell_pause_all_partial') || 'paused'}`
+            : `${okResults.length} ${i18n.t('shell_pause_all_ok') || 'paused'}`;
+        }
+        setTimeout(() => { if (label) label.textContent = original; btn.disabled = false; }, 1800);
+      } catch (e) {
+        console.error('[shell] pause-all failed', e);
+        if (label) label.textContent = i18n.t('shell_pause_all_err') || 'Pause failed';
+        setTimeout(() => { if (label) label.textContent = original; btn.disabled = false; }, 1800);
+      }
+    });
   }
 
   _toggleAgentsMenu() {

@@ -11,7 +11,7 @@ import uuid
 
 from app.config import settings
 from app.core.event_bus import event_bus
-from app.core.llm import llm_client
+from app.core.llm import llm_client, current_agent_type
 from .state import CampaignState
 
 logger = structlog.get_logger(__name__)
@@ -34,6 +34,7 @@ async def planner_node(state: CampaignState) -> dict:
     Planner Agent: Uses LLM to dynamically generate a task DAG based on the goal.
     Now incorporates historical insights from MemorySystem.
     """
+    _at_token = current_agent_type.set("PLANNER")
     campaign_id = state.get("campaign_id", "unknown")
     goal = state.get("goal", "")
     logger.info("planner_start", campaign_id=campaign_id, goal=goal[:60])

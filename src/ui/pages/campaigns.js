@@ -32,6 +32,7 @@ function trunc(str = '', n = 80) {
 
 /** Map event types to which agent published them — used when no trace exists. */
 const EVENT_AGENT_MAP = {
+  CampaignCreated:      { agent: 'ORCHESTRATOR', direction: 'control' },
   PlanGenerated:        { agent: 'PLANNER',      direction: 'out' },
   StrategyDecided:      { agent: 'STRATEGY',     direction: 'out' },
   ContentGenerated:     { agent: 'CONTENT_GEN',  direction: 'out' },
@@ -44,8 +45,18 @@ const EVENT_AGENT_MAP = {
   StatusChanged:        { agent: 'ORCHESTRATOR', direction: 'control' },
 };
 
-/** Build a unified flow timeline for a campaign, regardless of source. */
-function buildCampaignFlow(campaign, eventBus) {
+/** Localized event type display names. */
+function eventTypeLabel(eventType) {
+  return t(`evt_${eventType}`, eventType);
+}
+
+/** Build a unified flow timeline for a campaign, regardless of source.
+ *  Sources merged (deduped by event id):
+ *    1. Orchestrator.executePlan in-browser trace[]
+ *    2. eventBus.history filtered by campaign_id (in-browser + WS-mirrored)
+ *    3. Optional `remoteEvents` fetched from backend /v1/campaigns/:id/events
+ */
+function buildCampaignFlow(campaign, eventBus, remoteEvents = []) {
   const flow = [];
 
   // 1) In-browser trace from Orchestrator.executePlan
@@ -63,10 +74,15 @@ function buildCampaignFlow(campaign, eventBus) {
     }
   }
 
-  // 2) Events published for this campaign (covers backend campaigns too)
+  // 2 + 3) Events — merge bus + backend, dedupe by id.
   const cid = campaign?.campaign_id || campaign?.id;
-  const events = (eventBus?.history || []).filter(e => e.campaign_id === cid);
-  for (const ev of events) {
+  const seen = new Map();
+  const localBus = (eventBus?.history || []).filter(e => e.campaign_id === cid);
+  [...remoteEvents, ...localBus].forEach(ev => {
+    const id = ev.id || `${ev.event_type}|${ev.occurred_at}`;
+    if (!seen.has(id)) seen.set(id, ev);
+  });
+  for (const ev of seen.values()) {
     const meta = EVENT_AGENT_MAP[ev.event_type] || { agent: '—', direction: 'out' };
     flow.push({
       kind:      'event',
@@ -117,24 +133,205 @@ function renderFlowEntry(entry) {
     `;
   }
 
-  // event
-  const payload = entry.payload ? JSON.stringify(entry.payload, null, 2) : '';
+  // event — instead of always dumping JSON, render the meaningful payload
+  // shape inline (variants as cards, asset URLs as <img>, plan tasks as a
+  // list, metrics as a small grid, etc.). Fall back to JSON for unknown shapes.
+  const rich = renderEventPayload(entry.eventType, entry.payload);
+  const rawJson = entry.payload ? JSON.stringify(entry.payload, null, 2) : '';
   return `
     <div class="cf-entry cf-entry-event">
       <header class="cf-entry-head">
         ${agentBadge}
-        <span class="cf-event tiny">${escapeHtml(entry.eventType)}</span>
+        <span class="cf-event tiny">${escapeHtml(eventTypeLabel(entry.eventType))}</span>
         <span class="cf-kind tiny">${t('cf_kind_event', 'event published')}</span>
         <span class="cf-time tiny muted">${time}</span>
       </header>
       <div class="cf-entry-body">
         <div class="cf-io cf-io-full">
-          <div class="cf-io-label">${t('cf_payload', 'Payload')}</div>
-          <pre class="cf-pre">${escapeHtml(payload || '—')}</pre>
+          ${rich}
+          <details class="cf-raw">
+            <summary class="tiny muted">${t('cf_payload_raw', 'Raw payload')}</summary>
+            <pre class="cf-pre">${escapeHtml(rawJson || '—')}</pre>
+          </details>
         </div>
       </div>
     </div>
   `;
+}
+
+// Per-event-type rich rendering. Returns HTML; pure functions, no side effects.
+function renderEventPayload(eventType, payload) {
+  if (!payload || typeof payload !== 'object') return '';
+
+  switch (eventType) {
+    case 'PlanGenerated': {
+      const tasks = payload.plan?.tasks || [];
+      if (!tasks.length) return '';
+      return `
+        <div class="cf-io-label">${t('cf_plan_tasks', 'Plan tasks')} <span class="muted">(${tasks.length})</span></div>
+        <ul class="cf-task-list">
+          ${tasks.map(tk => `
+            <li class="cf-task-item">
+              <code class="code-inline">${escapeHtml(tk.id || '—')}</code>
+              <span class="cf-agent" data-agent="${escapeHtml(tk.agent_type || '')}">${escapeHtml(tk.agent_type || '—')}</span>
+              <span class="tiny muted">deps: ${escapeHtml((tk.dependencies || []).join(', ') || '—')}</span>
+            </li>
+          `).join('')}
+        </ul>
+      `;
+    }
+
+    case 'StrategyDecided': {
+      const cp = payload.strategy?.channel_plan || [];
+      const reason = payload.strategy?.reasoning;
+      return `
+        ${cp.length ? `
+          <div class="cf-io-label">${t('cf_channel_plan', 'Channel plan')}</div>
+          <ul class="cf-task-list">
+            ${cp.map(c => `
+              <li class="cf-task-item">
+                <code class="code-inline">${escapeHtml(c.channel || '—')}</code>
+                <span class="tiny">${t('cf_budget', 'budget')}: ${c.budget?.toLocaleString?.() ?? c.budget ?? '—'}</span>
+                ${c.bid_strategy ? `<span class="tiny muted">${escapeHtml(c.bid_strategy)}</span>` : ''}
+                ${c.priority ? `<span class="tiny muted">${escapeHtml(c.priority)}</span>` : ''}
+              </li>
+            `).join('')}
+          </ul>
+        ` : ''}
+        ${reason ? `
+          <div class="cf-io-label" style="margin-top: var(--sp-2);">${t('cf_reasoning', 'Reasoning')}</div>
+          <p class="cf-rationale">${escapeHtml(trunc(reason, 400))}</p>
+        ` : ''}
+      `;
+    }
+
+    case 'ContentGenerated': {
+      const variants = payload.bundle?.variants || [];
+      if (!variants.length) return '';
+      return `
+        <div class="cf-io-label">${t('cf_variants', 'Generated copy variants')} <span class="muted">(${variants.length})</span></div>
+        <div class="cf-variant-grid">
+          ${variants.map(v => `
+            <div class="cf-variant-card">
+              <header>
+                <span class="cf-variant-label">${escapeHtml(v.variant_label || v.id || '—')}</span>
+                ${v.channel ? `<span class="tiny muted">${escapeHtml(v.channel)}</span>` : ''}
+              </header>
+              ${v.title ? `<div class="cf-variant-title">${escapeHtml(v.title)}</div>` : ''}
+              ${v.hook  ? `<div class="cf-variant-hook tiny muted">${escapeHtml(v.hook)}</div>` : ''}
+              ${v.body  ? `<p class="cf-variant-body">${escapeHtml(trunc(v.body, 200))}</p>` : ''}
+              ${v.cta   ? `<div class="cf-variant-cta">CTA: ${escapeHtml(v.cta)}</div>` : ''}
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    case 'AssetsGenerated': {
+      // The agent_tasks broadcast wraps the assets dict in another `assets`
+      // key (see event_map["multimodal"]); accept either shape.
+      const inner = payload.assets?.assets || payload.assets || [];
+      const list = Array.isArray(inner) ? inner : [];
+      if (!list.length) return '';
+      return `
+        <div class="cf-io-label">${t('cf_assets', 'Generated assets')} <span class="muted">(${list.length})</span></div>
+        <div class="cf-asset-grid">
+          ${list.map(a => `
+            <figure class="cf-asset">
+              ${a.storage_url
+                ? `<a href="${escapeHtml(a.storage_url)}" target="_blank" rel="noopener">
+                     <img src="${escapeHtml(a.storage_url)}" alt="${escapeHtml(a.id || 'asset')}" loading="lazy" />
+                   </a>`
+                : `<div class="cf-asset-placeholder">no url</div>`}
+              <figcaption class="tiny muted">
+                ${escapeHtml(a.size || a.aspect_ratio || '')}
+                ${a.visual_tool ? ` · ${escapeHtml(a.visual_tool)}` : ''}
+              </figcaption>
+            </figure>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    case 'AdDeployed': {
+      const platforms = payload.platforms || [];
+      const adIds = payload.ad_ids || payload.ad_campaign_ids || [];
+      return `
+        <div class="cf-io-label">${t('cf_deployed', 'Deployed to')}</div>
+        <ul class="cf-task-list">
+          ${platforms.map((p, i) => `
+            <li class="cf-task-item">
+              <code class="code-inline">${escapeHtml(p)}</code>
+              ${adIds[i] ? `<span class="tiny muted">${escapeHtml(adIds[i])}</span>` : ''}
+            </li>
+          `).join('')}
+        </ul>
+      `;
+    }
+
+    case 'ReportGenerated': {
+      const m = payload.metrics || {};
+      const fields = [
+        ['Impressions', m.impressions], ['Clicks', m.clicks], ['Conversions', m.conversions],
+        ['Spend', m.spend], ['Revenue', m.revenue],
+        ['CTR', m.ctr != null ? (m.ctr * 100).toFixed(2) + '%' : null],
+        ['CVR', m.cvr != null ? (m.cvr * 100).toFixed(2) + '%' : null],
+        ['ROAS', m.roas?.toFixed?.(2) ?? m.roas],
+      ].filter(([_, v]) => v != null);
+      return `
+        <div class="cf-io-label">${t('cf_metrics', 'Metrics')}</div>
+        <div class="cf-metric-grid">
+          ${fields.map(([k, v]) => `
+            <div class="cf-metric"><div class="tiny muted">${k}</div><div class="cf-metric-val">${escapeHtml(String(v))}</div></div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    case 'OptimizationApplied': {
+      const actions = payload.actions || [];
+      if (!actions.length) return '';
+      return `
+        <div class="cf-io-label">${t('cf_actions', 'Optimizer actions')} · loop ${payload.loop_count ?? 0}</div>
+        <ul class="cf-task-list">
+          ${actions.map(a => `
+            <li class="cf-task-item">
+              <code class="code-inline">${escapeHtml(a.type || '—')}</code>
+              ${a.params?.reason ? `<span class="tiny muted">${escapeHtml(trunc(a.params.reason, 120))}</span>` : ''}
+            </li>
+          `).join('')}
+        </ul>
+      `;
+    }
+
+    case 'AnomalyDetected':
+      return `
+        <div class="cf-io-label" style="color: var(--danger);">${t('cf_anomaly', 'Anomaly')}</div>
+        <p>
+          <code class="code-inline">${escapeHtml(payload.metric || '')}</code>
+          ${payload.severity ? ` · <strong>${escapeHtml(payload.severity)}</strong>` : ''}
+          ${payload.channel ? ` · ${escapeHtml(payload.channel)}` : ''}
+          ${payload.description ? `<br/><span class="tiny muted">${escapeHtml(payload.description)}</span>` : ''}
+        </p>
+      `;
+
+    case 'StatusChanged':
+      return `
+        <p>
+          <code class="code-inline">${escapeHtml(payload.old_status || '—')}</code>
+          → <code class="code-inline">${escapeHtml(payload.new_status || '—')}</code>
+        </p>
+      `;
+
+    case 'ContentApproved':
+      return payload.feedback ? `
+        <div class="cf-io-label">${t('cf_review_feedback', 'Reviewer feedback')}</div>
+        <p>${escapeHtml(trunc(payload.feedback, 400))}</p>
+      ` : '';
+
+    default:
+      return '';
+  }
 }
 
 function renderCampaignRow(c, flow) {
@@ -167,6 +364,11 @@ function renderCampaignRow(c, flow) {
         <span class="campaign-row-kpi">${escapeHtml(kpi)}</span>
         <span class="campaign-row-loops num">${loops}</span>
         <span class="campaign-row-last tiny muted">${fmtTime(lastFlowAt)}</span>
+        <button class="campaign-row-delete" data-delete="${escapeHtml(cid)}"
+                title="${escapeHtml(t('campaigns_delete_title', 'Delete campaign and all its data'))}"
+                aria-label="${escapeHtml(t('campaigns_delete_title', 'Delete campaign'))}">
+          ${icon('trash', 'sm')}
+        </button>
       </header>
       <section class="campaign-flow" id="cf-${escapeHtml(cid)}" hidden>
         <div class="campaign-flow-meta">
@@ -190,6 +392,48 @@ function wireRowToggles(scope) {
       btn.setAttribute('aria-expanded', expanded ? 'false' : 'true');
       if (panel) panel.hidden = expanded;
       btn.closest('.campaign-row')?.classList.toggle('expanded', !expanded);
+    });
+  });
+}
+
+function wireRowDeletes(scope, api, repaint) {
+  scope.querySelectorAll('[data-delete]').forEach(btn => {
+    btn.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      const cid = btn.dataset.delete;
+      const confirmMsg = t(
+        'campaigns_delete_confirm',
+        'Permanently delete this campaign and all its plans, events, content and analytics? This cannot be undone.'
+      );
+      if (!window.confirm(confirmMsg)) return;
+
+      const row = btn.closest('.campaign-row');
+      btn.disabled = true;
+      row?.classList.add('deleting');
+
+      try {
+        const resp = await api?.deleteCampaign?.(cid);
+        // Vite/FastAPI 204 returns no body — _request normalizes that as
+        // { success: true, data: {} }. A 404 (already gone) is also fine.
+        const ok = resp?.success || /404|not found/i.test(String(resp?.error || ''));
+        if (!ok) throw new Error(resp?.error || 'delete failed');
+
+        // Drop the in-browser orchestrator entry too so the row doesn't
+        // resurrect on the next paint from local state.
+        try {
+          const map = window.OAG?.orchestrator?.campaigns;
+          if (map?.has) {
+            map.delete(cid);
+          }
+        } catch {}
+
+        await repaint();
+      } catch (e) {
+        console.error('[campaigns] delete failed', e);
+        alert(t('campaigns_delete_failed', 'Delete failed: ') + (e?.message || e));
+        btn.disabled = false;
+        row?.classList.remove('deleting');
+      }
     });
   });
 }
@@ -219,8 +463,19 @@ export default {
       }
 
       // Merge — prefer local (has trace); fall back to remote.
+      // Backend returns flat fields (budget_total / currency / kpi_metric /
+      // kpi_target); normalize to the nested shape the row template reads.
+      const normalizeRemote = (c) => ({
+        ...c,
+        budget: c.budget || (c.budget_total != null
+          ? { total: c.budget_total, currency: c.currency }
+          : undefined),
+        kpi: c.kpi || (c.kpi_metric != null
+          ? { metric: c.kpi_metric, target: c.kpi_target }
+          : undefined),
+      });
       const merged = new Map();
-      remoteCampaigns.forEach(c => merged.set(c.id || c.campaign_id, c));
+      remoteCampaigns.forEach(c => merged.set(c.id || c.campaign_id, normalizeRemote(c)));
       localCampaigns.forEach(c => {
         const id = c.campaign_id || c.id;
         const existing = merged.get(id);
@@ -232,8 +487,27 @@ export default {
         .reverse(); // newest first (assumes id encodes timestamp)
 
       const hasCampaigns = campaigns.length > 0;
+
+      // Fetch backend events per campaign so the row header step count and
+      // the expanded data flow include backend-driven runs (without these,
+      // a backend campaign reads as "0 steps" because eventBus.history is
+      // only populated when WS is subscribed).
+      const eventsById = new Map();
+      if (api?.getCampaignEvents) {
+        await Promise.all(campaigns.slice(0, 25).map(async (c) => {
+          try {
+            const resp = await api.getCampaignEvents(c.campaign_id);
+            if (resp?.success && Array.isArray(resp.data?.events)) {
+              eventsById.set(c.campaign_id, resp.data.events);
+            }
+          } catch (e) { /* best-effort */ }
+        }));
+      }
+
       // Pre-build flows so we know step counts in the header.
-      const rows = campaigns.map(c => renderCampaignRow(c, buildCampaignFlow(c, eventBus)));
+      const rows = campaigns.map(c =>
+        renderCampaignRow(c, buildCampaignFlow(c, eventBus, eventsById.get(c.campaign_id) || []))
+      );
 
       outlet.innerHTML = `
         <nav class="breadcrumb" aria-label="Breadcrumb">
@@ -261,6 +535,7 @@ export default {
             <span>${t('campaigns_col_kpi', 'KPI')}</span>
             <span class="num">${t('orch_col_loops', 'Loops')}</span>
             <span>${t('campaigns_col_last', 'Last activity')}</span>
+            <span></span>
           </header>
           <section class="campaign-list">
             ${rows.join('')}
@@ -269,6 +544,7 @@ export default {
       `;
 
       wireRowToggles(outlet);
+      wireRowDeletes(outlet, api, paint);
     }
 
     await paint();

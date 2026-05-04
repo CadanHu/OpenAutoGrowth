@@ -75,6 +75,32 @@ export class CampaignAPI {
         return this._request('GET', `/campaigns/${id}/events`);
     }
 
+    async getCampaignUsage(id) {
+        return this._request('GET', `/campaigns/${id}/usage`);
+    }
+
+    // ── Global Events Aggregator (Frontend Helper) ────────────────────────
+    
+    async getSystemEvents(eventTypes = []) {
+        try {
+            const camps = await this.listCampaigns({ limit: 10 });
+            if (!camps.success) return [];
+            const promises = (camps.data?.items || []).map(c => this.getCampaignEvents(c.id || c.campaign_id));
+            const results = await Promise.all(promises);
+            let allEvents = [];
+            results.forEach(r => {
+                if (r.success && r.data?.events) allEvents.push(...r.data.events);
+            });
+            if (eventTypes && eventTypes.length > 0) {
+                allEvents = allEvents.filter(e => eventTypes.includes(e.event_type));
+            }
+            return allEvents.sort((a,b) => String(a.occurred_at || '').localeCompare(String(b.occurred_at || '')));
+        } catch (e) {
+            console.warn('[API] getSystemEvents failed', e);
+            return [];
+        }
+    }
+
     // ── Articles ──────────────────────────────────────────────────────────
 
     async listArticles(limit = 20, offset = 0) {
@@ -83,6 +109,20 @@ export class CampaignAPI {
 
     async deleteArticle(id) {
         return this._request('DELETE', `/articles/${id}`);
+    }
+
+    // ── Authentication & Integrations ────────────────────────────────────
+
+    async listIntegrations(orgId) {
+        return this._request('GET', `/auth/integrations?org_id=${orgId}`);
+    }
+
+    async disconnectPlatform(platform, orgId) {
+        return this._request('DELETE', `/auth/integrations/${platform}?org_id=${orgId}`);
+    }
+
+    getAuthorizeUrl(platform, orgId) {
+        return `${API_BASE}/auth/${platform}/authorize?org_id=${orgId}`;
     }
 
     // ── A2A Agents ────────────────────────────────────────────────────────
@@ -147,7 +187,24 @@ export class CampaignAPI {
             if (body) options.body = JSON.stringify(body);
 
             const res = await fetch(`${API_BASE}${path}`, options);
-            const json = await res.json();
+
+            // 204 No Content / empty body — don't try to parse JSON, that
+            // throws "Unexpected end of JSON input" on success responses
+            // (e.g. DELETE /v1/campaigns/:id).
+            if (res.status === 204 || res.headers.get('content-length') === '0') {
+                return res.ok
+                    ? { success: true, data: {} }
+                    : { success: false, error: `HTTP ${res.status}` };
+            }
+
+            // Read once as text so we can degrade gracefully on a non-JSON
+            // body (e.g. an HTML error page from a misconfigured proxy).
+            const text = await res.text();
+            let json = {};
+            if (text) {
+                try { json = JSON.parse(text); }
+                catch { json = { _raw: text }; }
+            }
 
             if (!res.ok) {
                 return {
