@@ -58,21 +58,27 @@ export class MultimodalAgent {
         console.log(`[Multimodal] 🎨 Generating ${type}(s) | Tool: ${tool} | Sizes: ${targetSizes.join(', ')}`);
         await this._simulateLatency(type === 'video' ? 2500 : 1500);
 
-        const assets = targetSizes.map((size, idx) => ({
-            id:           `asset_${type}_${Date.now()}_${idx}`,
-            type:         type.toUpperCase(),
-            url:          `https://cdn.openautogrowth.ai/assets/${campaign_id}/${type}_${size.replace(':', 'x')}_${Date.now()}.${type === 'video' ? 'mp4' : 'png'}`,
-            thumbnail_url: type === 'video'
-                ? `https://cdn.openautogrowth.ai/thumbs/${campaign_id}/thumb_${idx}.jpg`
-                : null,
-            tool,
-            aspect_ratio: size,
-            width_px:     this._sizeToPixels(size).w,
-            height_px:    this._sizeToPixels(size).h,
-            duration_sec: type === 'video' ? duration : null,
-            prompt,
-            status: 'GENERATED',
-        }));
+        const assets = targetSizes.map((size, idx) => {
+            const { w, h } = this._sizeToPixels(size);
+            const seed = `pg_${Date.now()}_${idx}`;
+            return {
+                id:           `asset_${type}_${Date.now()}_${idx}`,
+                type:         type.toUpperCase(),
+                url:          type === 'video'
+                    ? `https://cdn.openautogrowth.ai/assets/${campaign_id}/video_${size.replace(':', 'x')}.mp4`
+                    : `https://picsum.photos/seed/${seed}/${w}/${h}`,
+                thumbnail_url: type === 'video'
+                    ? `https://picsum.photos/seed/${seed}/320/180`
+                    : null,
+                tool,
+                aspect_ratio: size,
+                width_px:     w,
+                height_px:    h,
+                duration_sec: type === 'video' ? duration : null,
+                prompt,
+                status: 'GENERATED',
+            };
+        });
 
         const output = {
             agent:    this.agentType,

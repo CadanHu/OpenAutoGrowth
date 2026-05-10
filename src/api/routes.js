@@ -79,6 +79,16 @@ export class CampaignAPI {
         return this._request('GET', `/campaigns/${id}/usage`);
     }
 
+    // ── GET /v1/campaigns/:id/memory ─────────────────────────────────────
+
+    async getCampaignMemory(id, { limit = 20, memory_type } = {}) {
+        const qs = new URLSearchParams();
+        if (limit) qs.set('limit', String(limit));
+        if (memory_type) qs.set('memory_type', memory_type);
+        const suffix = qs.toString() ? `?${qs.toString()}` : '';
+        return this._request('GET', `/campaigns/${id}/memory${suffix}`);
+    }
+
     // ── Global Events Aggregator (Frontend Helper) ────────────────────────
     
     async getSystemEvents(eventTypes = []) {

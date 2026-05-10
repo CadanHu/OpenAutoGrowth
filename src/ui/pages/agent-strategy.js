@@ -15,6 +15,11 @@ import { icon }             from '../icons.js';
 import { router }           from '../router.js';
 import { AGENTS }           from '../agent-registry.js';
 import { createAgentFrame } from './agent-frame.js';
+import {
+  getActiveCid,
+  subscribeCampaignChange,
+  renderCampaignBanner,
+} from '../campaign-context.js';
 
 const AGENT_ID = 'strategy';
 const KNOWN_CHANNELS = ['tiktok', 'meta', 'google', 'wechat'];
@@ -29,8 +34,15 @@ function escapeHtml(str = '') {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
+function activeCampaign() {
+  const cid = getActiveCid();
+  if (!cid) return null;
+  return getCtx().orchestrator?.campaigns?.get?.(cid) || { campaign_id: cid };
+}
 function strategyEvents() {
-  return (getCtx().eventBus?.history || []).filter(e => e.event_type === 'StrategyDecided');
+  const cid = getActiveCid();
+  return (getCtx().eventBus?.history || [])
+    .filter(e => e.event_type === 'StrategyDecided' && (!cid || e.campaign_id === cid));
 }
 function latestStrategyEvent() {
   const list = strategyEvents();
@@ -71,6 +83,7 @@ function renderOverview(panel, { setStatus }) {
     const top = strat?.channel_plan?.slice().sort((a, b) => (b.budget || 0) - (a.budget || 0))[0];
 
     panel.innerHTML = `
+      ${renderCampaignBanner({ campaign: activeCampaign(), i18nT: t })}
       <div class="metric-row">
         <div class="metric-box">
           <span class="metric-label">${t('strategy_metric_budget', 'Total Budget')}</span>
@@ -99,9 +112,10 @@ function renderOverview(panel, { setStatus }) {
   paint();
 
   const ctx = getCtx();
-  if (!ctx.eventBus) return;
+  const unsubCid = subscribeCampaignChange(paint);
+  if (!ctx.eventBus) return () => { try { unsubCid(); } catch {} };
   const unsub = ctx.eventBus.subscribe('StrategyDecided', paint);
-  return () => { try { unsub(); } catch {} };
+  return () => { try { unsubCid(); } catch {} try { unsub(); } catch {} };
 }
 
 function renderOverviewBody(event, strat) {
@@ -210,9 +224,10 @@ function renderChannelPlan(panel) {
   paint();
 
   const ctx = getCtx();
-  if (!ctx.eventBus) return;
+  const unsubCid = subscribeCampaignChange(paint);
+  if (!ctx.eventBus) return () => { try { unsubCid(); } catch {} };
   const unsub = ctx.eventBus.subscribe('StrategyDecided', paint);
-  return () => { try { unsub(); } catch {} };
+  return () => { try { unsubCid(); } catch {} try { unsub(); } catch {} };
 }
 
 // ── Tab: What-If (specialization) ─────────────────────────────────
@@ -441,9 +456,10 @@ function renderLogs(panel) {
   }
   paint();
   const ctx = getCtx();
-  if (!ctx.eventBus) return;
+  const unsubCid = subscribeCampaignChange(paint);
+  if (!ctx.eventBus) return () => { try { unsubCid(); } catch {} };
   const unsub = ctx.eventBus.subscribe('StrategyDecided', paint);
-  return () => { try { unsub(); } catch {} };
+  return () => { try { unsubCid(); } catch {} try { unsub(); } catch {} };
 }
 
 // ── Page module ───────────────────────────────────────────────────

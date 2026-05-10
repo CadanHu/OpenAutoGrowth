@@ -364,6 +364,11 @@ function renderCampaignRow(c, flow) {
         <span class="campaign-row-kpi">${escapeHtml(kpi)}</span>
         <span class="campaign-row-loops num">${loops}</span>
         <span class="campaign-row-last tiny muted">${fmtTime(lastFlowAt)}</span>
+        <a class="campaign-row-orchestrator" href="#/agents/orchestrator?cid=${encodeURIComponent(cid)}"
+           title="${escapeHtml(t('campaigns_open_orchestrator', 'Open in Orchestrator'))}"
+           aria-label="${escapeHtml(t('campaigns_open_orchestrator', 'Open in Orchestrator'))}">
+          ${icon('git-merge', 'sm')}
+        </a>
         <button class="campaign-row-delete" data-delete="${escapeHtml(cid)}"
                 title="${escapeHtml(t('campaigns_delete_title', 'Delete campaign and all its data'))}"
                 aria-label="${escapeHtml(t('campaigns_delete_title', 'Delete campaign'))}">
@@ -421,9 +426,11 @@ function wireRowDeletes(scope, api, repaint) {
         // Drop the in-browser orchestrator entry too so the row doesn't
         // resurrect on the next paint from local state.
         try {
-          const map = window.OAG?.orchestrator?.campaigns;
-          if (map?.has) {
-            map.delete(cid);
+          const orchestrator = window.OAG?.orchestrator;
+          if (orchestrator?.deleteCampaign) {
+            orchestrator.deleteCampaign(cid);
+          } else if (orchestrator?.campaigns?.delete) {
+            orchestrator.campaigns.delete(cid);
           }
         } catch {}
 
@@ -450,17 +457,33 @@ export default {
     const eventBus = ctx.eventBus;
 
     async function paint() {
-      const localCampaigns = Array.from((orchestrator?.campaigns || new Map()).values());
-
       let remoteCampaigns = [];
+      let fetchSuccess = false;
       try {
         const resp = await api?.listCampaigns?.();
         if (resp?.success && Array.isArray(resp.data?.items)) {
           remoteCampaigns = resp.data.items;
+          fetchSuccess = true;
         }
       } catch (e) {
         console.warn('[campaigns] Failed to fetch remote campaigns', e);
       }
+
+      // Automatic Sync: Prune local campaigns that are no longer on the backend
+      if (fetchSuccess && orchestrator) {
+        const remoteIds = new Set(remoteCampaigns.map(c => String(c.id || c.campaign_id)));
+        orchestrator.campaigns.forEach((c, id) => {
+          // If it looks like a backend campaign (UUID) but is missing from the remote list,
+          // it was likely deleted from another client or before the last fix.
+          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+          if (isUuid && !remoteIds.has(id)) {
+            console.log(`[campaigns] Auto-pruning stale local campaign: ${id}`);
+            orchestrator.deleteCampaign(id);
+          }
+        });
+      }
+
+      const localCampaigns = Array.from((orchestrator?.campaigns || new Map()).values());
 
       // Merge — prefer local (has trace); fall back to remote.
       // Backend returns flat fields (budget_total / currency / kpi_metric /

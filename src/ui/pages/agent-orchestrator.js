@@ -3,6 +3,13 @@ import { icon }             from '../icons.js';
 import { router }           from '../router.js';
 import { AGENTS }           from '../agent-registry.js';
 import { createAgentFrame } from './agent-frame.js';
+import {
+  getActiveCid,
+  setActiveCid,
+  resolveDefaultCid,
+  subscribeCampaignChange,
+  statusBadgeClass as sharedStatusBadgeClass,
+} from '../campaign-context.js';
 
 const AGENT_ID = 'orchestrator';
 
@@ -10,6 +17,19 @@ const AGENT_ID = 'orchestrator';
 function getCtx()  { return window.OAG || {}; }
 function t(k, d)   { return i18n.t(k) || d; }
 function fmtTime(iso) { return iso ? new Date(iso).toLocaleTimeString([], { hour12: false }) : '—'; }
+function fmtDateTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  const today = new Date();
+  const sameDay = d.getFullYear() === today.getFullYear()
+    && d.getMonth() === today.getMonth()
+    && d.getDate() === today.getDate();
+  return sameDay
+    ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+    : d.toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+}
+function shortId(id) { return id ? String(id).slice(0, 8) : '—'; }
 function escapeHtml(str = '') {
   return String(str)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -20,37 +40,133 @@ const CAMPAIGN_STATES = [
   'DRAFT', 'PLANNING', 'PENDING_REVIEW', 'PRODUCTION', 'DEPLOYED', 'MONITORING', 'OPTIMIZING', 'PAUSED', 'COMPLETED'
 ];
 
-let frame = null;
-let selectedCampaignId = null;
-let campaignsFetched = false;
+// Status → semantic class for the small badges in the sidebar / lists.
+function statusBadgeClass(status) {
+  if (!status) return 'muted';
+  if (status === 'PAUSED') return 'warning';
+  if (status === 'COMPLETED') return 'success';
+  if (status === 'DRAFT') return 'muted';
+  if (status.endsWith('_FAILED') || status === 'FAILED') return 'danger';
+  return 'active'; // PLANNING / PENDING_REVIEW / PRODUCTION / DEPLOYED / MONITORING / OPTIMIZING / LOOP_*
+}
 
-async function ensureCampaigns() {
+// Pipeline bucket definitions for the Overview tab. Order matters — this is
+// the left-to-right rendering order. `match(status)` returns true if a
+// campaign in `status` belongs to the bucket. Every status maps to exactly
+// one bucket, so the totals add up to campaigns.length.
+const PIPELINE_BUCKETS = [
+  { key: 'planning',   labelKey: 'orch_bucket_planning',   label: 'Planning',   tone: 'active',  match: s => s === 'DRAFT' || s === 'PLANNING' || s === 'PENDING_REVIEW' },
+  { key: 'production', labelKey: 'orch_bucket_production', label: 'Production', tone: 'active',  match: s => ['PRODUCTION','CONTENT_GEN','STRATEGY','MULTIMODAL','EXECUTING'].includes(s) },
+  { key: 'deployed',   labelKey: 'orch_bucket_deployed',   label: 'Deployed',   tone: 'active',  match: s => s === 'DEPLOYED' },
+  { key: 'monitoring', labelKey: 'orch_bucket_monitoring', label: 'Monitoring', tone: 'active',  match: s => s === 'MONITORING' },
+  { key: 'optimizing', labelKey: 'orch_bucket_optimizing', label: 'Optimizing', tone: 'active',  match: s => s === 'OPTIMIZING' || (s && s.startsWith('LOOP_')) },
+  { key: 'paused',     labelKey: 'orch_bucket_paused',     label: 'Paused',     tone: 'warning', match: s => s === 'PAUSED' },
+  { key: 'completed',  labelKey: 'orch_bucket_completed',  label: 'Completed',  tone: 'success', match: s => s === 'COMPLETED' },
+  { key: 'failed',     labelKey: 'orch_bucket_failed',     label: 'Failed',     tone: 'danger',  match: s => s === 'FAILED' || (s && s.endsWith('_FAILED')) },
+];
+
+// Map a clicked FSM target state → which manual-intervention action it
+// corresponds to, given the campaign's current status. Returns null if the
+// target isn't directly invokable (system-driven transitions like
+// PLANNING → PRODUCTION belong to the pipeline, not to the user).
+//
+// Mirrors the transition allow-list in
+// `backend/app/api/campaigns.py` :: TRANSITIONS — keep these in sync.
+function nodeActionFor(currentStatus, targetState) {
+  if (!currentStatus || !targetState || currentStatus === targetState) return null;
+  const isLoop = typeof currentStatus === 'string' && currentStatus.startsWith('LOOP_');
+  if (targetState === 'PAUSED') {
+    const allowed = isLoop || ['DEPLOYED','MONITORING','OPTIMIZING'].includes(currentStatus);
+    return allowed ? { action: 'pause', label: 'Pause' } : null;
+  }
+  if (targetState === 'MONITORING' && currentStatus === 'PAUSED') {
+    return { action: 'resume', label: 'Resume' };
+  }
+  if (targetState === 'COMPLETED') {
+    const allowed = isLoop || ['MONITORING','OPTIMIZING','PAUSED'].includes(currentStatus);
+    return allowed ? { action: 'complete', label: 'Mark complete' } : null;
+  }
+  return null;
+}
+
+const BUCKET_TONE_COLOR = {
+  active:  'var(--accent-primary)',
+  warning: 'var(--warning)',
+  success: 'var(--success)',
+  danger:  'var(--danger)',
+  muted:   'var(--text-tertiary)',
+};
+
+let frame = null;
+// Dedup concurrent fetches so simultaneous tab paints share one request,
+// but still allow re-fetch on later paints (after a pause-all etc.) so the
+// page reflects current backend state instead of an SPA-lifetime cache.
+let campaignsInflight = null;
+let campaignsLastFetched = 0;
+const CAMPAIGNS_CACHE_MS = 1500;
+
+// ── Shared selected-campaign state ─────────────────────────────────
+// Now lives in `src/ui/campaign-context.js` so the top-nav selector and
+// every agent page see the same value. Wrap setActiveCid here so the
+// orchestrator's per-tab `invalidateCampaignDetail` cache also gets reset
+// alongside the URL update.
+function _setActiveCid(id) {
+  setActiveCid(id);
+  invalidateCampaignDetail();
+}
+
+async function ensureCampaigns(force = false) {
   const ctx = getCtx();
   const orchestrator = ctx.orchestrator;
   if (!orchestrator) return;
   const map = orchestrator.campaigns || new Map();
-  if (map.size > 0 || campaignsFetched) return;
-  campaignsFetched = true;
+  const fresh = Date.now() - campaignsLastFetched < CAMPAIGNS_CACHE_MS;
+  if (!force && fresh && map.size > 0) return;
+  if (campaignsInflight) return campaignsInflight;
+  campaignsInflight = (async () => {
   try {
     const resp = await ctx.api?.listCampaigns?.({ limit: 50 });
-    if (resp?.success && resp.data?.items?.length) {
+    // Only reconcile if the request actually succeeded — a transient backend
+    // error must not wipe the Map (the user would lose their selection and
+    // any in-flight optimistic updates).
+    if (resp?.success && Array.isArray(resp.data?.items)) {
+      const backendIds = new Set();
       resp.data.items.forEach(c => {
         const id = c.id || c.campaign_id;
-        if (!map.has(id)) {
-          map.set(id, {
-            campaign_id: id,
-            name: c.name || c.goal || id,
-            status: c.status || 'DRAFT',
-            loop_count: c.loop_count || 0,
-            active_tasks: c.active_tasks || [],
-          });
-        }
+        backendIds.add(id);
+        const existing = map.get(id) || {};
+        // Always refresh status + timestamps so the Orchestrator page reflects
+        // backend state (e.g. after a "Pause all" the campaigns Map's stale
+        // status would otherwise persist for the lifetime of the SPA session).
+        map.set(id, {
+          ...existing,
+          campaign_id: id,
+          name: c.name || c.goal || id,
+          status: c.status || 'DRAFT',
+          loop_count: c.loop_count ?? existing.loop_count ?? 0,
+          active_tasks: c.active_tasks || existing.active_tasks || [],
+          created_at: c.created_at || existing.created_at,
+          updated_at: c.updated_at || existing.updated_at,
+        });
       });
+      // Drop orphans — entries the local Map holds but the backend doesn't.
+      // Most commonly seeded by `Orchestrator.js`'s legacy localStorage
+      // hydration (`oag_campaigns`); without this prune they would forever
+      // bias bucket counts and the FSM sidebar.
+      for (const id of map.keys()) {
+        if (!backendIds.has(id)) map.delete(id);
+      }
+      // Ensure the orchestrator references our Map even if it started null.
       if (!orchestrator.campaigns) orchestrator.campaigns = map;
     }
   } catch (e) {
     console.warn('[Orchestrator] ensureCampaigns failed:', e);
+  } finally {
+    campaignsLastFetched = Date.now();
+    campaignsInflight = null;
   }
+  })();
+  return campaignsInflight;
 }
 
 // ── Tab: Overview ─────────────────────────────────────────────────
@@ -61,13 +177,11 @@ function renderOverview(panel, { setStatus }) {
     const campaignsMap = orchestrator?.campaigns || new Map();
     const campaigns = Array.from(campaignsMap.values());
     
-    const pipeline = {
-      planning: campaigns.filter(c => c.status === 'PLANNING').length,
-      production: campaigns.filter(c => ['CONTENT_GEN', 'STRATEGY', 'MULTIMODAL'].includes(c.status)).length,
-      review: campaigns.filter(c => c.status === 'PENDING_REVIEW').length,
-      deployed: campaigns.filter(c => ['DEPLOYED', 'EXECUTING', 'MONITORING'].includes(c.status)).length,
-      optimizing: campaigns.filter(c => c.status?.startsWith('LOOP_') || c.status === 'OPTIMIZING').length,
-    };
+    const buckets = PIPELINE_BUCKETS.map(b => ({
+      ...b,
+      count: campaigns.filter(c => b.match(c.status)).length,
+    }));
+    const total = campaigns.length;
 
     const agents = Object.values(AGENTS);
 
@@ -75,14 +189,19 @@ function renderOverview(panel, { setStatus }) {
       <div class="panel-card" style="margin-bottom: 24px;">
         <header class="panel-card-head">
           <h3>${t('orch_pipeline_dist', 'Pipeline Distribution')}</h3>
+          <span class="tiny muted">${total} ${t('orch_total_campaigns', 'total')}</span>
         </header>
-        <div class="panel-card-body" style="display: flex; gap: 12px; padding: 20px;">
-          ${Object.entries(pipeline).map(([k, v]) => `
-            <div style="flex: 1; background: var(--bg-L2); border-radius: 8px; padding: 16px; text-align: center; border: 1px solid var(--border-subtle);">
-              <div style="font-size: 24px; font-weight: bold; color: var(--text-primary); margin-bottom: 4px;">${v}</div>
-              <div style="font-size: 11px; text-transform: uppercase; color: var(--text-tertiary); letter-spacing: 0.05em;">${k}</div>
-            </div>
-          `).join('')}
+        <div class="panel-card-body" style="display: flex; flex-wrap: wrap; gap: 10px; padding: 20px;">
+          ${buckets.map(b => {
+            const color = BUCKET_TONE_COLOR[b.tone] || 'var(--text-tertiary)';
+            const dim = b.count === 0;
+            return `
+              <div style="flex: 1 1 130px; min-width: 120px; background: var(--bg-L2); border-radius: 8px; padding: 14px 12px; text-align: center; border: 1px solid var(--border-subtle); border-top: 3px solid ${color}; ${dim ? 'opacity: 0.55;' : ''}">
+                <div style="font-size: 24px; font-weight: bold; color: ${b.count > 0 ? color : 'var(--text-tertiary)'}; margin-bottom: 4px;">${b.count}</div>
+                <div style="font-size: 11px; text-transform: uppercase; color: var(--text-tertiary); letter-spacing: 0.05em;">${t(b.labelKey, b.label)}</div>
+              </div>
+            `;
+          }).join('')}
         </div>
       </div>
 
@@ -200,19 +319,30 @@ function renderFsm(panel) {
     const api = ctx.api;
     const orchestrator = ctx.orchestrator;
     const campaignsMap = orchestrator?.campaigns || new Map();
-    const campaigns = Array.from(campaignsMap.values());
+    // Sort by updated_at DESC (fallback to created_at) so the most recently
+    // touched campaign sits on top — matches the Campaigns list page and
+    // makes the list usable when names collide.
+    const campaigns = Array.from(campaignsMap.values()).sort((a, b) => {
+      const ta = new Date(a.updated_at || a.created_at || 0).getTime();
+      const tb = new Date(b.updated_at || b.created_at || 0).getTime();
+      return tb - ta;
+    });
 
     if (campaigns.length === 0) {
       panel.innerHTML = `<div class="dag-empty"><p>${t('orch_no_campaigns', 'No campaigns yet.')}</p></div>`;
       return;
     }
 
-    if (!selectedCampaignId || !campaignsMap.has(selectedCampaignId)) {
-      selectedCampaignId = campaigns[0].campaign_id;
+    let activeCid = getActiveCid();
+    if (!activeCid || !campaignsMap.has(activeCid)) {
+      activeCid = resolveDefaultCid(campaigns);
+      // Reflect the choice into the URL silently so all tabs (and a copied
+      // link) stay consistent. Don't push history — first-paint default.
+      router.setQuery({ cid: activeCid });
       invalidateCampaignDetail();
     }
 
-    const currentCampaign = campaignsMap.get(selectedCampaignId);
+    const currentCampaign = campaignsMap.get(activeCid);
     let currentNormStatus = currentCampaign.status;
     if (currentNormStatus && currentNormStatus.startsWith('LOOP_')) {
       currentNormStatus = 'OPTIMIZING';
@@ -220,8 +350,8 @@ function renderFsm(panel) {
 
     // Pull real plans+tasks + token usage from the backend in parallel.
     const [detail, usageResp] = await Promise.all([
-      fetchCampaignDetail(api, selectedCampaignId),
-      api?.getCampaignUsage ? api.getCampaignUsage(selectedCampaignId).catch(() => null) : null,
+      fetchCampaignDetail(api, activeCid),
+      api?.getCampaignUsage ? api.getCampaignUsage(activeCid).catch(() => null) : null,
     ]);
     if (!mounted) return;
     const plans = Array.isArray(detail?.plans) ? detail.plans : [];
@@ -239,12 +369,22 @@ function renderFsm(panel) {
       <div class="fsm-layout">
         <div class="fsm-sidebar">
           <div class="menu-group-title">${t('orch_sidebar_title', 'Campaigns')}</div>
-          ${campaigns.map(c => `
-            <div class="fsm-sidebar-item ${c.campaign_id === selectedCampaignId ? 'active' : ''}" data-cid="${escapeHtml(c.campaign_id)}">
-              <div class="tiny text-truncate">${escapeHtml(c.name || c.campaign_id)}</div>
-              <div class="status-indicator ${c.status === 'PAUSED' ? 'warning' : 'ok'}"></div>
+          ${campaigns.map(c => {
+            const stamp = c.updated_at || c.created_at;
+            const badgeCls = statusBadgeClass(c.status);
+            return `
+            <div class="fsm-sidebar-item ${c.campaign_id === activeCid ? 'active' : ''}" data-cid="${escapeHtml(c.campaign_id)}" title="${escapeHtml(c.campaign_id)}">
+              <div class="fsm-sidebar-item-main">
+                <div class="text-truncate" style="font-size: 12px; font-weight: var(--fw-medium);">${escapeHtml(c.name || c.campaign_id)}</div>
+                <div class="tiny muted" style="display: flex; gap: 6px; margin-top: 2px;">
+                  <code class="code-inline" style="font-size: 10px;">${shortId(c.campaign_id)}</code>
+                  <span>·</span>
+                  <span>${escapeHtml(fmtDateTime(stamp))}</span>
+                </div>
+              </div>
+              <span class="status-badge ${badgeCls}">${escapeHtml(c.status || '—')}</span>
             </div>
-          `).join('')}
+          `;}).join('')}
         </div>
         <div class="fsm-canvas">
           <h3 class="fsm-canvas-title">${t('orch_fsm_title', 'State Machine')} — ${escapeHtml(currentCampaign.campaign_id)}</h3>
@@ -252,9 +392,20 @@ function renderFsm(panel) {
             ${CAMPAIGN_STATES.map((st, idx) => {
               const isActive = st === currentNormStatus;
               const isPast = CAMPAIGN_STATES.indexOf(currentNormStatus) > idx;
+              const action = nodeActionFor(currentCampaign.status, st);
+              const clickable = !!action && !isActive;
+              const titleAttr = isActive
+                ? t('orch_fsm_node_current', 'Current state')
+                : (clickable
+                    ? t('orch_fsm_node_clickable', 'Open intervention panel for {target}').replace('{target}', st)
+                    : t('orch_fsm_node_disabled', 'System-driven; not directly user-actionable'));
               return `
                 <div class="fsm-node ${isActive ? 'active' : ''} ${isPast ? 'past' : ''}">
-                  <div class="fsm-node-box">${st}</div>
+                  <button type="button"
+                          class="fsm-node-box ${clickable ? 'actionable' : 'disabled'}"
+                          data-target-status="${escapeHtml(st)}"
+                          ${clickable ? '' : 'disabled aria-disabled="true"'}
+                          title="${escapeHtml(titleAttr)}">${st}</button>
                   ${idx < CAMPAIGN_STATES.length - 1 ? `<div class="fsm-edge"></div>` : ''}
                 </div>
               `;
@@ -262,6 +413,7 @@ function renderFsm(panel) {
           </div>
           <div class="fsm-details">
             <p class="muted tiny">${t('orch_fsm_hint', 'Orchestrator advances campaign state based on system events.')}</p>
+            <p class="muted tiny">${t('orch_fsm_click_hint', 'Click PAUSED / MONITORING / COMPLETED to jump to manual intervention.')}</p>
             ${currentCampaign.status?.startsWith?.('LOOP_') ? `<p class="muted tiny">Current loop: ${currentCampaign.loop_count}</p>` : ''}
           </div>
 
@@ -407,9 +559,20 @@ function renderFsm(panel) {
 
     panel.querySelectorAll('.fsm-sidebar-item').forEach(item => {
       item.addEventListener('click', () => {
-        selectedCampaignId = item.dataset.cid;
-        invalidateCampaignDetail();
+        _setActiveCid(item.dataset.cid);
         paint();
+      });
+    });
+
+    // Clickable state nodes → jump to Alerts tab pre-filled with the
+    // requested transition. The Alerts tab reads ?intent=transition:X on
+    // paint, highlights the matching action button, and clears the param.
+    panel.querySelectorAll('.fsm-node-box.actionable').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const target = btn.dataset.targetStatus;
+        if (!target) return;
+        router.setQuery({ intent: `transition:${target}` });
+        frame?.renderTab('alerts');
       });
     });
   }
@@ -441,6 +604,62 @@ function renderFsm(panel) {
 }
 
 // ── Tab: Memory ───────────────────────────────────────────────────
+// "12m ago" style formatting for memory timestamps. Falls back to local
+// date string for anything older than ~7 days.
+function formatRelativeTime(iso) {
+  if (!iso) return '';
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return '';
+  const diff = Date.now() - then;
+  const sec = Math.round(diff / 1000);
+  if (sec < 45)              return 'just now';
+  if (sec < 90)              return '1m ago';
+  const min = Math.round(sec / 60);
+  if (min < 60)              return `${min}m ago`;
+  const hr  = Math.round(min / 60);
+  if (hr  < 24)              return `${hr}h ago`;
+  const day = Math.round(hr / 24);
+  if (day < 7)               return `${day}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+// Derive a per-agent status snapshot from the campaign's execution trace.
+// An agent is RUNNING if any of its tasks is in active_tasks; otherwise its
+// state reflects the outcome of its most recent trace entry.
+function deriveAgentStates(campaign) {
+  const trace = Array.isArray(campaign?.trace) ? campaign.trace : [];
+  const active = new Set(campaign?.active_tasks || []);
+  const latest = new Map(); // agentType -> last trace entry
+  for (const tr of trace) {
+    if (!tr?.agentType) continue;
+    latest.set(tr.agentType, tr);
+  }
+  const states = {};
+  for (const [agentType, tr] of latest) {
+    if (active.has(tr.taskId))   states[agentType] = 'RUNNING';
+    else if (tr.error)           states[agentType] = 'ERROR';
+    else if (tr.output != null)  states[agentType] = 'COMPLETED';
+    else                         states[agentType] = 'IDLE';
+  }
+  return states;
+}
+
+function buildStateTree(campaign) {
+  const trace = Array.isArray(campaign?.trace) ? campaign.trace : [];
+  const lastTraceAt = trace.length ? trace[trace.length - 1].timestamp : null;
+  return {
+    campaign_id: campaign?.campaign_id || null,
+    status:      campaign?.status || null,
+    loop_count:  campaign?.loop_count || 0,
+    budget:      campaign?.budget || null,
+    kpi:         campaign?.kpi || null,
+    active_tasks: campaign?.active_tasks || [],
+    agent_states: deriveAgentStates(campaign),
+    trace_entries: trace.length,
+    last_trace_at: lastTraceAt ? new Date(lastTraceAt).toISOString() : null,
+  };
+}
+
 function renderMemory(panel) {
   async function paint() {
     await ensureCampaigns();
@@ -452,35 +671,39 @@ function renderMemory(panel) {
       return;
     }
 
-    if (!selectedCampaignId || !campaignsMap.has(selectedCampaignId)) {
-      selectedCampaignId = campaigns[0].campaign_id;
+    let activeCid = getActiveCid();
+    if (!activeCid || !campaignsMap.has(activeCid)) {
+      activeCid = resolveDefaultCid(campaigns);
+      router.setQuery({ cid: activeCid });
     }
-    
-    // Scoped Mock memory data based on ID
-    const seed = selectedCampaignId.charCodeAt(0) % 3;
-    const mockStateTree = {
-      campaign_id: selectedCampaignId,
-      variables: {
-        budget_allocated: 50000 + seed * 10000,
-        current_roas: (Math.random() * 4 + 1).toFixed(2),
-        active_channels: seed === 0 ? ['tiktok'] : ['tiktok', 'meta']
-      },
-      agent_states: { Strategy: 'WAITING', ContentGen: 'COMPLETED', Optimizer: 'IDLE' }
-    };
-    
-    const allMemories = [
-      ["Discovered that short-form videos under 15s have 30% higher conversion rate.", "Keyword 'eco-friendly' performs poorly in SEA region, removed from targeting."],
-      ["Meta ads CPC is rising; re-allocated 20% budget to TikTok.", "High bounce rate on landing page detected; adjusted ad copy to better match intent."],
-      ["Local audience prefers lifestyle imagery over product shots.", "Retargeting campaign ROAS peaked at day 5, optimized frequency capping."]
-    ];
-    const mockMemories = allMemories[seed];
+
+    const campaign = campaignsMap.get(activeCid) || {};
+    const stateTree = buildStateTree(campaign);
+    const traceMissing = !Array.isArray(campaign.trace) || campaign.trace.length === 0;
+
+    // Fetch real long-term memory entries (populated by optimizer.py loop).
+    const api = getCtx().api;
+    let memoryItems = [];
+    let memoryError = null;
+    if (api?.getCampaignMemory) {
+      try {
+        const resp = await api.getCampaignMemory(activeCid, { limit: 20 });
+        if (resp?.success && Array.isArray(resp.data?.items)) {
+          memoryItems = resp.data.items;
+        } else if (!resp?.success) {
+          memoryError = resp?.error || 'Failed to load memory';
+        }
+      } catch (e) {
+        memoryError = e?.message || String(e);
+      }
+    }
 
     panel.innerHTML = `
       <div style="padding: 0 0 16px 0; border-bottom: 1px solid var(--border-subtle); margin-bottom: 20px; display: flex; align-items: center; gap: 12px;">
         <span style="font-weight: 500; font-size: 14px;">${t('orch_select_campaign', 'Select Campaign:')}</span>
         <select class="modal-input" id="memory-campaign-select" style="width: 240px;">
           ${campaigns.map(c => `
-            <option value="${escapeHtml(c.campaign_id)}" ${c.campaign_id === selectedCampaignId ? 'selected' : ''}>
+            <option value="${escapeHtml(c.campaign_id)}" ${c.campaign_id === activeCid ? 'selected' : ''}>
               ${escapeHtml(c.name || c.campaign_id)}
             </option>
           `).join('')}
@@ -493,7 +716,12 @@ function renderMemory(panel) {
             <h3>${t('orch_state_tree', 'LangGraph State Inspector')}</h3>
           </header>
           <div class="panel-card-body">
-            <pre style="background: var(--bg-L2); padding: 16px; border-radius: 8px; font-size: 12px; overflow-x: auto; color: var(--text-secondary); border: 1px solid var(--border-subtle);"><code>${escapeHtml(JSON.stringify(mockStateTree, null, 2))}</code></pre>
+            ${traceMissing ? `
+              <p class="muted" style="font-size: 12px; margin: 0 0 12px 0;">
+                ${t('orch_state_no_trace', 'No in-session execution trace yet — agent_states will populate once this campaign runs through the Orchestrator in the current browser session.')}
+              </p>
+            ` : ''}
+            <pre style="background: var(--bg-L2); padding: 16px; border-radius: 8px; font-size: 12px; overflow-x: auto; color: var(--text-secondary); border: 1px solid var(--border-subtle);"><code>${escapeHtml(JSON.stringify(stateTree, null, 2))}</code></pre>
           </div>
         </div>
 
@@ -502,12 +730,47 @@ function renderMemory(panel) {
             <h3>${t('orch_optimization_memory', 'pgvector Optimization Memory')}</h3>
           </header>
           <div class="panel-card-body" style="display: flex; flex-direction: column; gap: 12px;">
-            ${mockMemories.map(m => `
+            ${memoryError ? `
+              <div style="background: #fee2e2; color: #b91c1c; padding: 12px; border-radius: 8px; font-size: 12px;">
+                ${escapeHtml(memoryError)}
+              </div>
+            ` : ''}
+            ${memoryItems.length === 0 && !memoryError ? `
+              <div class="dag-empty" style="padding: 24px;">
+                <p class="muted" style="font-size: 13px; margin: 0;">
+                  ${t('orch_memory_empty', 'No long-term memory yet. Entries are written by the optimizer agent on each loop that produces an AI insight.')}
+                </p>
+              </div>
+            ` : ''}
+            ${memoryItems.map(m => {
+              const md = m.metadata || {};
+              const actions = Array.isArray(md.actions) ? md.actions : [];
+              const loopLabel = (md.loop !== undefined && md.loop !== null) ? `Loop #${md.loop}` : '';
+              const absTime = m.created_at ? new Date(m.created_at).toLocaleString() : '';
+              const relTime = formatRelativeTime(m.created_at);
+              return `
               <div style="background: var(--bg-L2); padding: 16px; border-radius: 8px; border: 1px solid var(--border-subtle); display: flex; gap: 12px;">
                 <span style="font-size: 16px;">💡</span>
-                <span style="font-size: 13px; color: var(--text-primary); line-height: 1.5;">${escapeHtml(m)}</span>
+                <div style="flex: 1; min-width: 0;">
+                  <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 6px; flex-wrap: wrap;">
+                    ${loopLabel ? `<span class="cred-status-sandbox" style="font-size: 10px;">${escapeHtml(loopLabel)}</span>` : ''}
+                    <span class="muted" style="font-size: 11px;" title="${escapeHtml(absTime)}">${escapeHtml(relTime)}</span>
+                  </div>
+                  <div style="font-size: 13px; color: var(--text-primary); line-height: 1.5; white-space: pre-wrap; word-break: break-word;">${escapeHtml(m.content || '')}</div>
+                  ${actions.length ? `
+                    <div style="margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap;">
+                      ${actions.map(a => `<span style="background: var(--bg-L1); border: 1px solid var(--border-subtle); padding: 2px 8px; border-radius: 999px; font-size: 11px; color: var(--text-secondary);">${escapeHtml(String(a))}</span>`).join('')}
+                    </div>
+                  ` : ''}
+                  ${m.metadata ? `
+                    <details style="margin-top: 8px;">
+                      <summary class="muted" style="font-size: 11px; cursor: pointer;">${t('orch_memory_details', 'details')}</summary>
+                      <pre style="background: var(--bg-L1); padding: 8px; border-radius: 6px; font-size: 11px; margin: 6px 0 0 0; overflow-x: auto;"><code>${escapeHtml(JSON.stringify(m.metadata, null, 2))}</code></pre>
+                    </details>
+                  ` : ''}
+                </div>
               </div>
-            `).join('')}
+            `;}).join('')}
           </div>
         </div>
       </div>
@@ -516,12 +779,33 @@ function renderMemory(panel) {
     const select = panel.querySelector('#memory-campaign-select');
     if (select) {
       select.addEventListener('change', (e) => {
-        selectedCampaignId = e.target.value;
+        _setActiveCid(e.target.value);
         paint();
       });
     }
   }
+
+  let mounted = true;
+  const safePaint = () => { if (mounted) paint(); };
   paint();
+
+  // Auto-refresh: redraw when optimizer writes a new insight or status flips,
+  // and a slow 30s poll catches the case where backend events fire while the
+  // tab was hidden (BroadcastChannel missed deliveries, etc).
+  const ctx = getCtx();
+  const unsubs = [];
+  if (ctx.eventBus) {
+    ['OptimizationApplied', 'StatusChanged', 'AdDeployed'].forEach(ev => {
+      unsubs.push(ctx.eventBus.subscribe(ev, safePaint));
+    });
+  }
+  const poll = setInterval(safePaint, 30000);
+
+  return () => {
+    mounted = false;
+    clearInterval(poll);
+    unsubs.forEach(u => { try { u(); } catch {} });
+  };
 }
 
 // ── Tab: Alerts ───────────────────────────────────────────────────
@@ -557,7 +841,6 @@ async function fetchAnomaliesForCampaign(api, campaign_id) {
 
 function renderAlerts(panel) {
   let mounted = true;
-  let interventionTarget = null;
 
   async function paint() {
     if (!mounted) return;
@@ -594,15 +877,16 @@ function renderAlerts(panel) {
 
     const pendingCampaigns = campaigns.filter(c => c.status === 'PENDING_REVIEW');
 
-    // Default the intervention selector to the most recent in-progress
-    // campaign on first paint.
-    if (!interventionTarget) {
-      const firstActive = campaigns.find(c =>
+    // Use the shared selected campaign. If none in URL, fall back to the
+    // most recent in-progress campaign — matches the prior behavior here.
+    let activeCid = getActiveCid();
+    if (!activeCid || !campaignsMap.has(activeCid)) {
+      activeCid = resolveDefaultCid(campaigns, c =>
         !['COMPLETED','PAUSED','DRAFT'].includes(c.status)
       );
-      interventionTarget = firstActive?.campaign_id || campaigns[0]?.campaign_id || '';
+      if (activeCid) router.setQuery({ cid: activeCid });
     }
-    const selected = campaigns.find(c => c.campaign_id === interventionTarget);
+    const selected = campaigns.find(c => c.campaign_id === activeCid);
     const selectedStatus = selected?.status || '';
 
     panel.innerHTML = `
@@ -706,7 +990,7 @@ function renderAlerts(panel) {
                 ${campaigns.length === 0
                   ? `<option value="">${t('orch_interv_empty', 'No campaigns available')}</option>`
                   : campaigns.map(c => `
-                      <option value="${escapeHtml(c.campaign_id)}" ${c.campaign_id === interventionTarget ? 'selected' : ''}>
+                      <option value="${escapeHtml(c.campaign_id)}" ${c.campaign_id === activeCid ? 'selected' : ''}>
                         ${escapeHtml((c.campaign_id || '').slice(0,8))} · ${escapeHtml(c.status || '—')} · ${escapeHtml((c.name || c.goal || '').slice(0,28))}
                       </option>
                     `).join('')}
@@ -725,7 +1009,7 @@ function renderAlerts(panel) {
                 <button class="btn btn-secondary" id="orch-act-complete" ${isCompletable(selectedStatus) ? '' : 'disabled'}>
                   ${icon('check', 'sm')} ${t('orch_btn_complete', 'Mark complete')}
                 </button>
-                <button class="btn btn-secondary" id="orch-act-cancel"   style="color:var(--danger); border-color:color-mix(in srgb, var(--danger) 35%, transparent);" ${interventionTarget ? '' : 'disabled'}>
+                <button class="btn btn-secondary" id="orch-act-cancel"   style="color:var(--danger); border-color:color-mix(in srgb, var(--danger) 35%, transparent);" ${activeCid ? '' : 'disabled'}>
                   ${icon('trash', 'sm')} ${t('orch_btn_cancel', 'Delete campaign')}
                 </button>
               </div>
@@ -741,13 +1025,13 @@ function renderAlerts(panel) {
       tr.addEventListener('click', () => {
         const cid = tr.dataset.anomalyCid;
         if (!cid) return;
-        interventionTarget = cid;
+        _setActiveCid(cid);
         paint();
       });
     });
 
     panel.querySelector('#orch-interv-select')?.addEventListener('change', (e) => {
-      interventionTarget = e.target.value;
+      _setActiveCid(e.target.value);
       paint();
     });
 
@@ -760,7 +1044,7 @@ function renderAlerts(panel) {
     };
 
     const runAction = async (label, fn, optimisticStatus) => {
-      if (!interventionTarget) return;
+      if (!activeCid) return;
       setFb(`${label}…`);
       try {
         const resp = await fn();
@@ -769,8 +1053,8 @@ function renderAlerts(panel) {
         // even before WS pushes a StatusChanged event.
         if (optimisticStatus) {
           const map = ctx.orchestrator?.campaigns;
-          const entry = map?.get?.(interventionTarget);
-          if (entry) { entry.status = optimisticStatus; map.set(interventionTarget, entry); }
+          const entry = map?.get?.(activeCid);
+          if (entry) { entry.status = optimisticStatus; map.set(activeCid, entry); }
         }
         setFb(`${label} ${t('orch_action_ok', 'OK')}`, 'success');
         await paint();
@@ -781,26 +1065,26 @@ function renderAlerts(panel) {
 
     panel.querySelector('#orch-act-pause')?.addEventListener('click', () =>
       runAction(t('orch_btn_pause', 'Pause'),
-                () => api.pauseCampaign(interventionTarget),
+                () => api.pauseCampaign(activeCid),
                 'PAUSED')
     );
     panel.querySelector('#orch-act-resume')?.addEventListener('click', () =>
       runAction(t('orch_btn_resume', 'Resume'),
-                () => api.resumeCampaign(interventionTarget),
+                () => api.resumeCampaign(activeCid),
                 'MONITORING')
     );
     panel.querySelector('#orch-act-complete')?.addEventListener('click', () =>
       runAction(t('orch_btn_complete', 'Mark complete'),
-                () => api.completeCampaign(interventionTarget),
+                () => api.completeCampaign(activeCid),
                 'COMPLETED')
     );
     panel.querySelector('#orch-act-cancel')?.addEventListener('click', async () => {
-      if (!interventionTarget) return;
+      if (!activeCid) return;
       const ok = window.confirm(
         t('orch_btn_cancel_confirm', 'Permanently delete this campaign and all its data?')
       );
       if (!ok) return;
-      const cidToDelete = interventionTarget;
+      const cidToDelete = activeCid;
       setFb(`${t('orch_btn_cancel', 'Deleting')}…`);
       try {
         const resp = await api.deleteCampaign(cidToDelete);
@@ -808,13 +1092,41 @@ function renderAlerts(panel) {
           throw new Error(resp?.error || 'delete failed');
         }
         ctx.orchestrator?.campaigns?.delete?.(cidToDelete);
-        interventionTarget = null;
+        _setActiveCid(null);
         setFb(t('orch_action_deleted', 'Deleted.'), 'success');
         await paint();
       } catch (e) {
         setFb(`${t('orch_btn_cancel', 'Delete')} ${t('orch_action_fail', 'failed')}: ${e.message || e}`, 'error');
       }
     });
+
+    // ── Consume ?intent=transition:TARGET sent from FSM node click ──
+    // Highlight the matching action button, scroll the panel into view,
+    // and clear the param so a later page reload doesn't re-trigger it.
+    const intent = router.getQuery().intent;
+    const m = /^transition:(.+)$/.exec(intent || '');
+    if (m) {
+      router.setQuery({ intent: null });
+      const target = m[1];
+      const btnId = target === 'PAUSED'    ? '#orch-act-pause'
+                  : target === 'MONITORING' ? '#orch-act-resume'
+                  : target === 'COMPLETED'  ? '#orch-act-complete'
+                  : null;
+      const targetBtn = btnId ? panel.querySelector(btnId) : null;
+      const intervSelect = panel.querySelector('#orch-interv-select');
+      if (intervSelect) intervSelect.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (targetBtn && !targetBtn.disabled) {
+        targetBtn.classList.add('intent-flash');
+        try { targetBtn.focus({ preventScroll: true }); } catch {}
+        setTimeout(() => targetBtn.classList.remove('intent-flash'), 2400);
+        setFb(t('orch_intent_prompt', 'Confirm to ') + (m[1]), 'muted');
+      } else if (targetBtn?.disabled) {
+        setFb(
+          t('orch_intent_blocked', 'Cannot transition to {target} from current status.').replace('{target}', target),
+          'error'
+        );
+      }
+    }
   }
 
   paint();
@@ -911,7 +1223,7 @@ export default {
       tabs: [
         { id: 'overview', labelKey: 'agent_tab_overview',  label: 'Overview',     icon: 'activity',     render: renderOverview },
         { id: 'fsm',      labelKey: 'orch_tab_fsm',        label: 'FSM View',     icon: 'git-merge',    render: renderFsm },
-        { id: 'memory',   labelKey: 'orch_tab_memory',     label: 'Agent Memory', icon: 'database',     render: renderMemory },
+        { id: 'memory',   labelKey: 'orch_tab_memory',     label: 'Learnings',    icon: 'database',     render: renderMemory },
         { id: 'alerts',   labelKey: 'orch_tab_alerts',     label: 'Alerts & HITL',icon: 'alert-triangle',render: renderAlerts },
         { id: 'logs',     labelKey: 'agent_tab_logs',      label: 'Logs',         icon: 'align-left',   render: renderLogs },
       ],
@@ -923,6 +1235,7 @@ export default {
   unmount() {
     frame?.unmount();
     frame = null;
-    campaignsFetched = false;
+    campaignsLastFetched = 0;
+    campaignsInflight = null;
   },
 };

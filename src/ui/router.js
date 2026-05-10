@@ -70,6 +70,57 @@ class HashRouter {
     return hash.split('?')[0];
   }
 
+  // Read the current URL query as a plain object. Pages should call this
+  // instead of caching values at mount time, so query updates from
+  // setQuery() are picked up.
+  getQuery() {
+    const hash = location.hash.slice(1) || '/';
+    const queryStr = hash.split('?')[1] || '';
+    return Object.fromEntries(new URLSearchParams(queryStr));
+  }
+
+  // Mutate the current URL's query string in place without re-resolving the
+  // route. `updates` is an object: keys with `null`/`undefined` are removed,
+  // other values are coerced to strings.
+  //
+  // Uses replaceState by default — typical UI selections (active campaign,
+  // active tab) shouldn't pollute the history stack. Pass `{ push: true }`
+  // for actions that *should* be back-button-undoable.
+  //
+  // Dispatches a `queryChanged` CustomEvent on document so listening pages
+  // can repaint affected tabs without a full re-mount.
+  setQuery(updates, { push = false } = {}) {
+    const hash = location.hash.slice(1) || '/';
+    const [path, queryStr] = hash.split('?');
+    const params = new URLSearchParams(queryStr || '');
+    let changed = false;
+    for (const [k, v] of Object.entries(updates || {})) {
+      if (v == null || v === '') {
+        if (params.has(k)) { params.delete(k); changed = true; }
+      } else {
+        const next = String(v);
+        if (params.get(k) !== next) { params.set(k, next); changed = true; }
+      }
+    }
+    if (!changed) return;
+    const qs = params.toString();
+    const next = '#' + path + (qs ? '?' + qs : '');
+    try {
+      if (push) history.pushState(null, '', next);
+      else      history.replaceState(null, '', next);
+    } catch (e) {
+      // Some browsers reject too-frequent replaceState; fall back to direct
+      // hash assignment, which DOES fire hashchange and re-resolve. That's
+      // a minor UX cost but keeps the URL truthful.
+      console.warn('[router] setQuery failed, falling back to hash assignment', e);
+      location.hash = next.slice(1);
+      return;
+    }
+    const query = Object.fromEntries(params);
+    if (this.current) this.current.query = query;
+    document.dispatchEvent(new CustomEvent('queryChanged', { detail: { path, query } }));
+  }
+
   _match(path) {
     for (const route of this.routes) {
       const m = path.match(route.regex);

@@ -35,9 +35,102 @@ def _jsonb_safe(obj):
 
 # ── Lifecycle Hooks ──────────────────────────────────────────────────────────
 
+# Statuses where the worker is supposed to be actively driving the pipeline.
+# At startup, anything still sitting in one of these is a remnant of a prior
+# crash / clean shutdown that happened mid-job — there's no live worker for
+# them right now (this very worker is the one booting up).
+#
+# Excluded on purpose:
+#   • DRAFT          — pre-start, user hasn't kicked anything off
+#   • PENDING_REVIEW — waiting on human approval, not on a worker
+#   • MONITORING     — settled state after one pipeline cycle (post our fix)
+#   • PAUSED, COMPLETED, *_FAILED — terminal / explicit
+_ORPHAN_STATUSES = (
+    "PLANNING", "PRODUCTION", "DEPLOYED", "OPTIMIZING",
+    "LOOP_1", "LOOP_2", "LOOP_3", "LOOP_4", "LOOP_5",
+)
+# Don't touch rows updated within this window — could legitimately belong to
+# a job that's currently in-flight in another concurrent worker process or
+# was just enqueued by the API and not yet picked up.
+_ORPHAN_GRACE_SECONDS = 300
+
+
+async def _recover_orphan_campaigns() -> int:
+    """
+    Pause campaigns stuck in an executing state with no live worker job.
+
+    Returns the count of campaigns paused. Failure is logged and swallowed —
+    a recovery hiccup must never block worker startup.
+    """
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import select
+    from app.database import async_session_factory
+    from app.models.campaign import Campaign, DomainEvent
+
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=_ORPHAN_GRACE_SECONDS)
+
+    async with async_session_factory() as db:
+        q = (
+            select(Campaign)
+            .where(Campaign.status.in_(_ORPHAN_STATUSES))
+            .where(Campaign.updated_at < cutoff)
+        )
+        rows = (await db.execute(q)).scalars().all()
+        if not rows:
+            return 0
+
+        for c in rows:
+            old_status = c.status
+            c.status = "PAUSED"
+            db.add(c)
+            db.add(DomainEvent(
+                campaign_id=c.id,
+                event_type="StatusChanged",
+                payload={
+                    "old_status": old_status,
+                    "new_status": "PAUSED",
+                    "reason": "orphan_recovery_on_startup",
+                },
+            ))
+            logger.warning(
+                "orphan_campaign_paused",
+                campaign_id=str(c.id),
+                previous_status=old_status,
+            )
+
+        await db.commit()
+
+    # Best-effort WS broadcast so any open client refreshes immediately
+    # without waiting for its next poll. Each row gets its own event.
+    for c in rows:
+        try:
+            await event_bus.publish(
+                "StatusChanged",
+                {
+                    "old_status": "ORPHAN",  # already overwritten on `c.status`
+                    "new_status": "PAUSED",
+                    "reason": "orphan_recovery_on_startup",
+                },
+                str(c.id),
+            )
+        except Exception as e:
+            logger.warning("orphan_recovery_broadcast_failed",
+                           campaign_id=str(c.id), error=str(e))
+
+    return len(rows)
+
+
 async def startup(ctx: dict):
     """Initialize resources for the worker process."""
     await event_bus.connect()
+    try:
+        recovered = await _recover_orphan_campaigns()
+        if recovered:
+            logger.info("orphan_recovery_complete", count=recovered)
+    except Exception as e:
+        # Recovery failure must not prevent the worker from starting up —
+        # the worker is more valuable alive than perfectly consistent.
+        logger.exception("orphan_recovery_failed", error=str(e))
     logger.info("worker_startup_complete")
 
 
@@ -99,14 +192,25 @@ async def run_campaign_pipeline(ctx: dict, campaign_id: str):
 
     # ── Persist results back to DB ────────────────────────────────────────
     final_status = result.get("status", "COMPLETED")
-    # Map LangGraph internal status to DB-valid enum values
+    # Map LangGraph internal status to DB-valid enum values.
     db_status = final_status
     if db_status == "OPTIMIZING":
-        loop = result.get("loop_count", 1)
-        if loop <= 5:
-            db_status = f"LOOP_{loop}"
-        else:
-            db_status = "OPTIMIZING"
+        # The graph terminates after the optimizer node runs to completion.
+        # The legacy mapping wrote `LOOP_<loop_count>` here, but the worker
+        # has already exited cleanly — there's no in-flight loop. That made
+        # the campaign read as "still running" indefinitely (the source of
+        # the orphan-running confusion in the orchestrator overview).
+        #
+        # Translate to a true post-pipeline state instead:
+        #   • COMPLETED  — KPI met (no further work to do)
+        #   • MONITORING — pipeline finished one cycle, ads live, waiting
+        #                  on next data refresh / external trigger
+        # `loop_count` is preserved verbatim in the dedicated column so the
+        # UI / analytics can still tell how many optimization cycles ran.
+        metrics = (result.get("report") or {}).get("metrics") or {}
+        target  = (result.get("kpi") or {}).get("target") or 0
+        roas    = metrics.get("roas") or 0
+        db_status = "COMPLETED" if (roas and target and roas >= target) else "MONITORING"
 
     completed_tasks = result.get("completed_tasks", [])
 
@@ -269,9 +373,11 @@ async def run_campaign_pipeline(ctx: dict, campaign_id: str):
             except Exception as e:
                 logger.warning("event_broadcast_failed", event=event_type, error=str(e))
 
-    # Final status broadcast
-    broadcast_status = "COMPLETED" if final_status == "OPTIMIZING" else db_status
-    await event_bus.publish("StatusChanged", {"old_status": old_status, "new_status": broadcast_status}, campaign_id)
+    # Final status broadcast — keep WS clients consistent with the DB row.
+    # (Previously this hard-coded "COMPLETED" whenever LangGraph exited via
+    # OPTIMIZING; that lied to clients when KPI wasn't actually met. Now
+    # `db_status` already encodes COMPLETED vs MONITORING correctly.)
+    await event_bus.publish("StatusChanged", {"old_status": old_status, "new_status": db_status}, campaign_id)
 
     logger.info("campaign_pipeline_done", campaign_id=campaign_id, status=db_status)
     return result

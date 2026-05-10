@@ -15,6 +15,11 @@ import { icon }           from '../icons.js';
 import { router }         from '../router.js';
 import { AGENTS }         from '../agent-registry.js';
 import { createAgentFrame } from './agent-frame.js';
+import {
+  getActiveCid,
+  subscribeCampaignChange,
+  renderCampaignBanner,
+} from '../campaign-context.js';
 
 const AGENT_ID    = 'content-gen';
 const AGENT_EVENT = 'ContentGenerated';
@@ -29,9 +34,16 @@ function formatTime(iso) {
   return d.toLocaleTimeString([], { hour12: false });
 }
 
+function activeCampaign() {
+  const cid = getActiveCid();
+  if (!cid) return null;
+  return getCtx().orchestrator?.campaigns?.get?.(cid) || { campaign_id: cid };
+}
 function contentGenEvents() {
   const ctx = getCtx();
-  return (ctx.eventBus?.history || []).filter(e => e.event_type === AGENT_EVENT);
+  const cid = getActiveCid();
+  return (ctx.eventBus?.history || [])
+    .filter(e => e.event_type === AGENT_EVENT && (!cid || e.campaign_id === cid));
 }
 
 function escapeHtml(str = '') {
@@ -42,11 +54,13 @@ function escapeHtml(str = '') {
 
 // ── Tab: Overview ───────────────────────────────────────────────────
 function renderOverview(panel, { setStatus }) {
+  function paint() {
   const events = contentGenEvents();
   const last   = events[events.length - 1];
   const totalVariants = events.reduce((s, e) => s + (e.payload?.bundle?.variants?.length || 0), 0);
 
   panel.innerHTML = `
+    ${renderCampaignBanner({ campaign: activeCampaign(), i18nT: t })}
     <div class="metric-row">
       <div class="metric-box">
         <span class="metric-label">${t('metric_state', 'State')}</span>
@@ -76,6 +90,12 @@ function renderOverview(panel, { setStatus }) {
     </div>
   `;
   setStatus(events.length ? t('status_completed', 'Completed') : t('metric_idle', 'Idle'));
+  }
+  paint();
+  const unsubCid = subscribeCampaignChange(paint);
+  const ctx = getCtx();
+  const evUnsub = ctx.eventBus?.subscribe?.(AGENT_EVENT, paint);
+  return () => { try { unsubCid(); } catch {} try { evUnsub?.(); } catch {} };
 }
 
 function renderLastRunSummary(event) {

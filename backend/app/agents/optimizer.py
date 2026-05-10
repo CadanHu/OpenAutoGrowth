@@ -109,8 +109,9 @@ async def optimizer_node(state: CampaignState) -> dict:
                 await memory_system.persist({
                     "campaign_id": campaign_id,
                     "type": "OPTIMIZATION_LEARNING",
-                    "content": f"Goal: {state.get('goal')}\nIssue: {analysis_summary}",
+                    "content": analysis_summary,
                     "metadata": {
+                        "goal": state.get("goal"),
                         "loop": loop_count,
                         "actions": [a["type"] for a in combined_actions],
                         "metrics": metrics

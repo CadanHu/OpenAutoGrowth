@@ -16,6 +16,11 @@ import { icon }             from '../icons.js';
 import { router }           from '../router.js';
 import { AGENTS }           from '../agent-registry.js';
 import { createAgentFrame } from './agent-frame.js';
+import {
+  getActiveCid,
+  subscribeCampaignChange,
+  renderCampaignBanner,
+} from '../campaign-context.js';
 
 const AGENT_ID    = 'channel-exec';
 const KNOWN_CHANNELS = ['tiktok', 'meta', 'google', 'wechat'];
@@ -30,8 +35,15 @@ function escapeHtml(str = '') {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
+function activeCampaign() {
+  const cid = getActiveCid();
+  if (!cid) return null;
+  return getCtx().orchestrator?.campaigns?.get?.(cid) || { campaign_id: cid };
+}
 function deployEvents() {
-  return (getCtx().eventBus?.history || []).filter(e => e.event_type === 'AdDeployed');
+  const cid = getActiveCid();
+  return (getCtx().eventBus?.history || [])
+    .filter(e => e.event_type === 'AdDeployed' && (!cid || e.campaign_id === cid));
 }
 function getAgent() { return getCtx().orchestrator?.agents?.get?.('ChannelExec') || null; }
 
@@ -85,6 +97,7 @@ function renderOverview(panel, { setStatus }) {
     const last = events.length ? events[events.length - 1] : null;
 
     panel.innerHTML = `
+      ${renderCampaignBanner({ campaign: activeCampaign(), i18nT: t })}
       <div class="replan-banner">
         ${icon('sparkles', 'sm')}
         <span>${t('channelexec_sandbox_banner', 'Mock adapter mode · Real platform deploy lands in v0.0.3.')}</span>
@@ -117,9 +130,10 @@ function renderOverview(panel, { setStatus }) {
   paint();
 
   const ctx = getCtx();
-  if (!ctx.eventBus) return;
+  const unsubCid = subscribeCampaignChange(paint);
+  if (!ctx.eventBus) return () => { try { unsubCid(); } catch {} };
   const unsub = ctx.eventBus.subscribe('AdDeployed', paint);
-  return () => { try { unsub(); } catch {} };
+  return () => { try { unsubCid(); } catch {} try { unsub(); } catch {} };
 }
 
 function renderLastDeployCard(event) {

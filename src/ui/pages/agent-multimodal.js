@@ -15,6 +15,11 @@ import { icon }             from '../icons.js';
 import { router }           from '../router.js';
 import { AGENTS }           from '../agent-registry.js';
 import { createAgentFrame } from './agent-frame.js';
+import {
+  getActiveCid,
+  subscribeCampaignChange,
+  renderCampaignBanner,
+} from '../campaign-context.js';
 
 const AGENT_ID = 'multimodal';
 const KNOWN_RATIOS = ['1:1', '9:16', '16:9', '4:5', '4:3'];
@@ -30,20 +35,30 @@ function escapeHtml(str = '') {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
+function activeCampaign() {
+  const cid = getActiveCid();
+  if (!cid) return null;
+  return getCtx().orchestrator?.campaigns?.get?.(cid) || { campaign_id: cid };
+}
 function assetEvents() {
-  return (getCtx().eventBus?.history || []).filter(e => e.event_type === 'AssetsGenerated');
+  const cid = getActiveCid();
+  return (getCtx().eventBus?.history || [])
+    .filter(e => e.event_type === 'AssetsGenerated' && (!cid || e.campaign_id === cid));
 }
 function getAgent() { return getCtx().orchestrator?.agents?.get?.('Multimodal') || null; }
 
-/** Iterate Memory shortTerm and pull every Multimodal output's assets. */
+/** Iterate Memory shortTerm and pull every Multimodal output's assets,
+ * scoped to the active campaign when one is selected. */
 function collectAssets() {
   const memory = getCtx().memory;
   const out = [];
   if (!memory?.shortTerm) return out;
+  const activeCid = getActiveCid();
   for (const [key, entry] of memory.shortTerm.entries()) {
     const v = entry.value;
     if (v?.agent === 'MULTIMODAL' && Array.isArray(v.assets) && v.assets.length) {
       const cid = key.split(':')[0];
+      if (activeCid && cid !== activeCid) continue;
       const generatedAt = v.metadata?.generated_at || new Date(entry.timestamp).toISOString();
       for (const asset of v.assets) {
         out.push({ ...asset, campaign_id: cid, generated_at: generatedAt });
@@ -54,48 +69,61 @@ function collectAssets() {
   return out.sort((a, b) => (b.generated_at || '').localeCompare(a.generated_at || ''));
 }
 
-/** SVG placeholder for an asset card (no network). */
-function placeholderSvg(ratio, type) {
+/** SVG placeholder for an asset card. Renders <img> if url is provided. */
+function assetThumb(asset) {
+  const ratio = asset.aspect_ratio || asset.size || '1:1';
+  const type = asset.type || 'IMAGE';
+  const url = asset.storage_url || asset.url;
+
   const [w, h] = ratio.split(':').map(Number);
-  const W = 200;
-  const H = Math.round((W * h) / w);
   const isVideo = (type || '').toUpperCase() === 'VIDEO';
   const tone = isVideo ? 'var(--agent-multimodal)' : 'var(--accent-primary)';
+
+  if (url && !url.includes('cdn.openautogrowth.ai')) {
+    // Render real image if we have a valid-looking URL (excluding our internal dead simulation domain)
+    return `
+      <div class="asset-thumb-img" style="aspect-ratio: ${w}/${h}; background: var(--bg-L2);">
+        <img src="${escapeHtml(url)}" alt="${escapeHtml(asset.id)}" loading="lazy"
+             onerror="this.parentElement.innerHTML='<div class=\'asset-thumb-error\'>Error loading</div>'" />
+      </div>
+    `;
+  }
+
   const ico = isVideo
     ? '<polygon points="42,32 42,68 70,50" fill="currentColor"/>'
     : '<rect x="32" y="32" width="36" height="36" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="44" cy="46" r="3" fill="currentColor"/><polyline points="32,68 50,52 68,66" fill="none" stroke="currentColor" stroke-width="2"/>';
+  
   return `
     <svg viewBox="0 0 100 ${(100 * h) / w}" preserveAspectRatio="xMidYMid meet"
          class="asset-thumb-svg" aria-hidden="true"
          style="width:100%; aspect-ratio: ${w}/${h}; background:color-mix(in srgb, ${tone} 8%, var(--bg-L2)); color:${tone};">
-      <g transform="translate(${(100 - 100) / 2}, ${((100 * h) / w - 100) / 2})">${ico}</g>
+      <g transform="translate(0, ${((100 * h) / w - 100) / 2})">${ico}</g>
       <text x="50" y="${((100 * h) / w) - 6}" text-anchor="middle"
             font-size="6" fill="currentColor" opacity="0.6"
             font-family="ui-monospace, Menlo, monospace">${ratio}</text>
     </svg>
   `;
-  // Note: width/height not used; aspect-ratio CSS is enough.
-  void [W, H];
 }
 
 function renderAssetCard(asset, opts = {}) {
   const dims = `${asset.width_px || '?'}×${asset.height_px || '?'}`;
   const dur = asset.duration_sec ? ` · ${asset.duration_sec}s` : '';
+  const ratio = asset.aspect_ratio || asset.size || '1:1';
   return `
     <article class="asset-card" data-asset-id="${escapeHtml(asset.id)}">
-      <div class="asset-thumb">${placeholderSvg(asset.aspect_ratio || '1:1', asset.type)}</div>
+      <div class="asset-thumb">${assetThumb(asset)}</div>
       <div class="asset-meta">
         <div class="asset-meta-head">
           <span class="asset-pill">${escapeHtml((asset.type || 'IMAGE').toLowerCase())}</span>
-          <span class="muted tiny">${escapeHtml(asset.aspect_ratio || '—')}</span>
+          <span class="muted tiny">${escapeHtml(ratio)}</span>
         </div>
-        <div class="muted tiny">${escapeHtml(asset.tool || '—')} · ${dims}${dur}</div>
+        <div class="muted tiny">${escapeHtml(asset.tool || asset.visual_tool || '—')} · ${dims}${dur}</div>
         ${opts.showCampaign && asset.campaign_id ? `<div class="muted tiny">cid ${escapeHtml(asset.campaign_id.slice(0, 10))}…</div>` : ''}
       </div>
       ${opts.expandable ? `
         <details class="asset-details">
           <summary>${t('multimodal_show_prompt', 'Show prompt & metadata')}</summary>
-          <pre>${escapeHtml(JSON.stringify({ prompt: asset.prompt, status: asset.status, url: asset.url }, null, 2))}</pre>
+          <pre>${escapeHtml(JSON.stringify({ prompt: asset.prompt || asset.generation_prompt, status: asset.status, url: asset.storage_url || asset.url }, null, 2))}</pre>
         </details>` : ''}
     </article>
   `;
@@ -111,6 +139,7 @@ function renderOverview(panel, { setStatus }) {
     const last = assets[0];
 
     panel.innerHTML = `
+      ${renderCampaignBanner({ campaign: activeCampaign(), i18nT: t })}
       <div class="metric-row">
         <div class="metric-box">
           <span class="metric-label">${t('multimodal_metric_total', 'Total Assets')}</span>
@@ -139,9 +168,10 @@ function renderOverview(panel, { setStatus }) {
   paint();
 
   const ctx = getCtx();
-  if (!ctx.eventBus) return;
+  const unsubCid = subscribeCampaignChange(paint);
+  if (!ctx.eventBus) return () => { try { unsubCid(); } catch {} };
   const unsub = ctx.eventBus.subscribe('AssetsGenerated', paint);
-  return () => { try { unsub(); } catch {} };
+  return () => { try { unsubCid(); } catch {} try { unsub(); } catch {} };
 }
 
 function renderOverviewBody(assets, last) {

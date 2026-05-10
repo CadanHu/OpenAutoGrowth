@@ -353,6 +353,37 @@ async def get_campaign_events(
     return {"total": len(events), "events": events}
 
 
+@router.get("/{campaign_id}/memory")
+async def get_campaign_memory(
+    campaign_id: UUID,
+    limit: int = Query(20, ge=1, le=100),
+    memory_type: str | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return long-term agent memory entries for a campaign (newest first)."""
+    from app.models.optimization import AgentMemory
+
+    await _get_campaign_or_404(campaign_id, db)
+
+    q = select(AgentMemory).where(AgentMemory.campaign_id == campaign_id)
+    if memory_type:
+        q = q.where(AgentMemory.memory_type == memory_type)
+    q = q.order_by(AgentMemory.created_at.desc()).limit(limit)
+
+    rows = (await db.execute(q)).scalars().all()
+    items = [
+        {
+            "id": str(r.id),
+            "memory_type": r.memory_type,
+            "content": r.content,
+            "metadata": r.metadata_,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
+    return {"total": len(items), "items": items}
+
+
 @router.get("/{campaign_id}/usage")
 async def get_campaign_usage(campaign_id: UUID, db: AsyncSession = Depends(get_db)):
     """

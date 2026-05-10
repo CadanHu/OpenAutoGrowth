@@ -343,40 +343,81 @@
     function appDoc() { return frame?.contentDocument; }
     function oag()    { return appWin()?.OAG; }
 
-    // ── Live state polling ─────────────────────────────────
+    // ── Live state polling (backend-truth) ─────────────────
+    // Reads the real DB via the backend REST API instead of the iframe's
+    // in-memory OAG.orchestrator (which holds stale localStorage snapshots
+    // from the old frontend-only simulator and doesn't reflect /pause).
+    const API_BASE = 'http://localhost:9393/v1';
+    const ACTIVE_STATUSES = new Set([
+      'PLANNING','PENDING_REVIEW','PRODUCTION','DEPLOYED','MONITORING','OPTIMIZING',
+      'LOOP_1','LOOP_2','LOOP_3','LOOP_4','LOOP_5',
+    ]);
+
     function trunc(s, n=80) { s = String(s ?? ''); return s.length > n ? s.slice(0,n)+'…' : s; }
     function fmtTime(iso)   { return iso ? new Date(iso).toLocaleTimeString([], { hour12: false }) : '—'; }
 
-    function refresh() {
-      const o = oag();
+    async function fetchJSON(path, signal) {
+      const res = await fetch(`${API_BASE}${path}`, { signal });
+      if (!res.ok) throw new Error(`${res.status} ${path}`);
+      return res.json();
+    }
+
+    let inflight = null;
+    async function refresh() {
+      if (inflight) inflight.abort();
+      const ctrl = new AbortController();
+      inflight = ctrl;
+
       const indicator = document.getElementById('harness-indicator');
       const indicatorLabel = document.getElementById('harness-indicator-label');
-      const ready = !!o?.eventBus;
-      indicator.className = 'indicator ' + (ready ? 'online' : 'offline');
-      indicatorLabel.textContent = ready ? 'connected' : 'connecting…';
 
-      const campaigns = ready ? Array.from((o.orchestrator?.campaigns || new Map()).values()) : [];
-      const events = ready ? (o.eventBus.history || []) : [];
-      const active = campaigns.find(c => c.status && !['COMPLETED','PAUSED'].includes(c.status)) || campaigns[campaigns.length-1];
+      try {
+        const list = await fetchJSON('/campaigns?limit=100', ctrl.signal);
+        const items = list.items || [];
 
-      document.getElementById('state-campaigns').textContent = campaigns.length;
-      document.getElementById('state-events').textContent = events.length;
-      document.getElementById('state-active-campaign').textContent = active?.campaign_id ? trunc(active.campaign_id, 24) : '—';
+        // Active = most recently updated (or created) among non-terminal statuses;
+        // fall back to the most recent campaign overall.
+        const byTime = (a,b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at);
+        const sorted = [...items].sort(byTime);
+        const active = sorted.find(c => ACTIVE_STATUSES.has(c.status)) || sorted[0];
 
-      const status = active?.status || '—';
-      const sEl = document.getElementById('state-status');
-      sEl.textContent = status;
-      sEl.className = 'state-value' +
-        (status === 'PAUSED' || status === 'FAILED' ? ' danger'
-         : status === 'COMPLETED' ? ' success'
-         : status && status !== '—' ? ' warn'
-         : '');
+        let events = [];
+        if (active?.id) {
+          try {
+            const ev = await fetchJSON(`/campaigns/${active.id}/events?limit=50`, ctrl.signal);
+            // Backend returns newest-first; reverse so events[length-1] is latest.
+            events = (ev.events || []).slice().reverse();
+          } catch { /* events optional */ }
+        }
 
-      const last = events[events.length-1];
-      const pre = document.getElementById('last-event-pre');
-      pre.textContent = last
-        ? `${fmtTime(last.occurred_at)} · ${last.event_type}\n${trunc(JSON.stringify(last.payload), 240)}`
-        : 'no events yet';
+        indicator.className = 'indicator online';
+        indicatorLabel.textContent = 'connected';
+
+        document.getElementById('state-campaigns').textContent = items.length;
+        document.getElementById('state-events').textContent = events.length;
+        document.getElementById('state-active-campaign').textContent = active?.id ? trunc(active.id, 24) : '—';
+
+        const status = active?.status || '—';
+        const sEl = document.getElementById('state-status');
+        sEl.textContent = status;
+        sEl.className = 'state-value' +
+          (status === 'PAUSED' || status === 'FAILED' || status.endsWith('_FAILED') ? ' danger'
+           : status === 'COMPLETED' ? ' success'
+           : status && status !== '—' ? ' warn'
+           : '');
+
+        const last = events[events.length-1];
+        const pre = document.getElementById('last-event-pre');
+        pre.textContent = last
+          ? `${fmtTime(last.occurred_at)} · ${last.event_type}\n${trunc(JSON.stringify(last.payload), 240)}`
+          : 'no events yet';
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+        indicator.className = 'indicator offline';
+        indicatorLabel.textContent = 'backend offline';
+      } finally {
+        if (inflight === ctrl) inflight = null;
+      }
 
       try {
         const hash = appWin()?.location?.hash || '#/';
@@ -385,6 +426,7 @@
     }
     setInterval(refresh, 1500);
     frame.addEventListener('load', () => setTimeout(refresh, 200));
+    refresh();
 
     // ── Quick nav ──────────────────────────────────────────
     document.querySelectorAll('[data-nav]').forEach(btn => {

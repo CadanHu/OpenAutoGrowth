@@ -9,11 +9,23 @@ import { i18n } from '../i18n/index.js';
 import { icon } from './icons.js';
 import { router } from './router.js';
 import { AGENTS, AGENT_ORDER, LAYER_LABELS, listAgentsByLayer } from './agent-registry.js';
+import {
+  getActiveCid,
+  setActiveCid,
+  resolveDefaultCid,
+  subscribeCampaignChange,
+  statusBadgeClass,
+} from './campaign-context.js';
 
 export class AppShell {
   constructor() {
     this._closeAgentsMenu = this._closeAgentsMenu.bind(this);
     this._agentsMenuOpen = false;
+    this._closeCampaignMenu = this._closeCampaignMenu.bind(this);
+    this._campaignMenuOpen = false;
+    // Cached campaign list for the selector dropdown — avoids hammering
+    // the API on every dropdown open. Refreshed on open if older than 5s.
+    this._campaignsCache = { items: [], fetchedAt: 0 };
   }
 
   mount() {
@@ -22,11 +34,14 @@ export class AppShell {
     this._bindNav();
     this._bindLang();
     this._bindPauseAll();
+    this._bindCampaignSelector();
     this._highlightCurrent(router.current_path());
 
     document.addEventListener('routeChanged', (e) => {
       this._highlightCurrent(e.detail.path);
       this._closeAgentsMenu();
+      this._closeCampaignMenu();
+      this._refreshCampaignChip();
     });
 
     document.addEventListener('languageChanged', () => {
@@ -35,8 +50,17 @@ export class AppShell {
       this._bindNav();
       this._bindLang();
       this._bindPauseAll();
+      this._bindCampaignSelector();
       this._highlightCurrent(router.current_path());
     });
+
+    // Update the chip whenever the global campaign-context changes — covers
+    // selections made from any page (FSM sidebar, Memory dropdown, etc.).
+    this._unsubCampaign = subscribeCampaignChange(() => this._refreshCampaignChip());
+
+    // Auto-pick the most recently-updated campaign on first load if the
+    // URL has no cid yet, so every page opens "to" something.
+    this._maybeAutoSelect();
   }
 
   _renderNavbar() {
@@ -82,6 +106,19 @@ export class AppShell {
         </nav>
 
         <div class="nav-right">
+          <div class="nav-dropdown" id="nav-campaign-wrap">
+            <button class="campaign-chip" id="campaign-chip"
+                    title="${i18n.t('shell_campaign_chip_title') || 'Currently viewing campaign — click to switch'}">
+              <span class="status-indicator" data-campaign-dot></span>
+              <span class="campaign-chip-text" data-campaign-text>${i18n.t('shell_campaign_chip_loading') || 'Loading…'}</span>
+              ${icon('chevron-down', 'sm')}
+            </button>
+            <div class="nav-menu campaign-menu" id="campaign-menu" role="menu" aria-hidden="true">
+              <div class="campaign-menu-list" data-campaign-list>
+                <div class="campaign-menu-empty muted tiny">${i18n.t('shell_campaign_chip_loading') || 'Loading…'}</div>
+              </div>
+            </div>
+          </div>
           <button id="btn-pause-all"
                   class="btn-pause-all"
                   title="${i18n.t('shell_pause_all_title') || 'Pause every running campaign'}">
@@ -92,7 +129,6 @@ export class AppShell {
             <button id="btn-lang-zh" class="lang-btn ${locale === 'zh' ? 'active' : ''}" role="tab" aria-selected="${locale === 'zh'}">ZH</button>
             <button id="btn-lang-en" class="lang-btn ${locale === 'en' ? 'active' : ''}" role="tab" aria-selected="${locale === 'en'}">EN</button>
           </div>
-          <span id="campaign-status-badge" class="campaign-badge" data-i18n="nav_no_campaign">${i18n.t('nav_no_campaign')}</span>
           <div class="nav-status" title="${i18n.t('nav_agents_online')}">
             <span class="status-dot"></span>
             <span class="status-text">${i18n.t('nav_agents_online')}</span>
@@ -127,6 +163,31 @@ export class AppShell {
     });
 
     document.addEventListener('click', this._closeAgentsMenu);
+
+    // Carry the currently-selected campaign across nav clicks. Uses
+    // `[data-route]` as the membership marker — covers Hub link, agent
+    // menu items, Campaigns / Integrations links. We only modify the
+    // navigation behavior when:
+    //   • A cid is currently active
+    //   • The clicked href is a hash route inside this app
+    //   • The user didn't request a new tab (cmd/ctrl/shift/middle-click)
+    //   • The destination doesn't already specify its own ?cid (avoid
+    //     overriding deep-links like the campaigns row's git-merge button)
+    document.addEventListener('click', (e) => {
+      const a = e.target.closest('a[data-route]');
+      if (!a) return;
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+      const cid = getActiveCid();
+      if (!cid) return;
+      const href = a.getAttribute('href') || '';
+      if (!href.startsWith('#/')) return;
+      const [path, qs] = href.slice(1).split('?');
+      const params = new URLSearchParams(qs || '');
+      if (params.get('cid')) return;
+      params.set('cid', cid);
+      e.preventDefault();
+      router.navigate(path, Object.fromEntries(params));
+    }, true /* capture, before the default <a> handler */);
   }
 
   _bindLang() {
@@ -269,5 +330,183 @@ export class AppShell {
       if (isActive) el.setAttribute('aria-current', 'page');
       else el.removeAttribute('aria-current');
     });
+
+    // When navigating between top-level pages, automatically carry the
+    // currently-selected campaign in the URL. Done by intercepting clicks
+    // on `[data-route]` links — see `_bindNav`. (`href` itself stays
+    // canonical so right-click → copy link still works without `?cid=`.)
   }
+
+  // ── Campaign selector chip ─────────────────────────────────────────
+
+  _bindCampaignSelector() {
+    const wrap = document.getElementById('nav-campaign-wrap');
+    const chip = document.getElementById('campaign-chip');
+    if (!wrap || !chip) return;
+
+    chip.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this._toggleCampaignMenu();
+    });
+    wrap.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { this._closeCampaignMenu(); chip.focus(); }
+    });
+    document.addEventListener('click', this._closeCampaignMenu);
+
+    // Initial paint with whatever cid is in the URL right now.
+    this._refreshCampaignChip();
+  }
+
+  _toggleCampaignMenu() {
+    if (this._campaignMenuOpen) this._closeCampaignMenu();
+    else this._openCampaignMenu();
+  }
+
+  async _openCampaignMenu() {
+    const wrap = document.getElementById('nav-campaign-wrap');
+    const menu = document.getElementById('campaign-menu');
+    if (!wrap || !menu) return;
+    wrap.classList.add('open');
+    menu.setAttribute('aria-hidden', 'false');
+    this._campaignMenuOpen = true;
+
+    await this._renderCampaignList(/* force refresh */ Date.now() - this._campaignsCache.fetchedAt > 5000);
+  }
+
+  _closeCampaignMenu() {
+    const wrap = document.getElementById('nav-campaign-wrap');
+    const menu = document.getElementById('campaign-menu');
+    if (!wrap || !menu) return;
+    wrap.classList.remove('open');
+    menu.setAttribute('aria-hidden', 'true');
+    this._campaignMenuOpen = false;
+  }
+
+  async _fetchCampaigns(force = false) {
+    if (!force && this._campaignsCache.items.length && Date.now() - this._campaignsCache.fetchedAt < 5000) {
+      return this._campaignsCache.items;
+    }
+    const api = window.OAG?.api;
+    if (!api?.listCampaigns) return [];
+    try {
+      const resp = await api.listCampaigns({ limit: 100 });
+      if (resp?.success && Array.isArray(resp.data?.items)) {
+        const items = resp.data.items.slice().sort((a, b) => {
+          const ta = new Date(a.updated_at || a.created_at || 0).getTime();
+          const tb = new Date(b.updated_at || b.created_at || 0).getTime();
+          return tb - ta;
+        });
+        this._campaignsCache = { items, fetchedAt: Date.now() };
+        return items;
+      }
+    } catch (e) {
+      console.warn('[shell] fetch campaigns failed', e);
+    }
+    return this._campaignsCache.items;
+  }
+
+  async _renderCampaignList(force) {
+    const list = document.querySelector('[data-campaign-list]');
+    if (!list) return;
+    const items = await this._fetchCampaigns(force);
+    const cid = getActiveCid();
+
+    if (!items.length) {
+      list.innerHTML = `<div class="campaign-menu-empty muted tiny">${i18n.t('shell_campaign_chip_none') || 'No campaigns yet — launch one from Hub.'}</div>`;
+      return;
+    }
+
+    list.innerHTML = items.map(c => {
+      const id = c.id || c.campaign_id;
+      const stamp = c.updated_at || c.created_at;
+      const cls = statusBadgeClass(c.status);
+      const active = id === cid ? 'active' : '';
+      return `
+        <button class="campaign-menu-item ${active}" data-cid="${id}" type="button">
+          <span class="campaign-menu-item-main">
+            <span class="campaign-menu-item-name text-truncate">${escapeHtml(c.name || c.goal || id)}</span>
+            <span class="tiny muted" style="display:flex; gap:6px;">
+              <code class="code-inline" style="font-size:10px;">${id.slice(0, 8)}</code>
+              <span>·</span>
+              <span>${escapeHtml(fmtDateTime(stamp))}</span>
+            </span>
+          </span>
+          <span class="status-badge ${cls}">${escapeHtml(c.status || '—')}</span>
+        </button>
+      `;
+    }).join('');
+
+    list.querySelectorAll('.campaign-menu-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        setActiveCid(item.dataset.cid);
+        this._closeCampaignMenu();
+      });
+    });
+  }
+
+  async _refreshCampaignChip() {
+    const dot = document.querySelector('[data-campaign-dot]');
+    const text = document.querySelector('[data-campaign-text]');
+    if (!dot || !text) return;
+    const cid = getActiveCid();
+    if (!cid) {
+      dot.className = 'status-indicator';
+      text.textContent = i18n.t('shell_campaign_chip_none_short') || 'No campaign';
+      return;
+    }
+    // Look up name/status from cache; if not yet loaded, fetch.
+    let entry = this._campaignsCache.items.find(c => (c.id || c.campaign_id) === cid);
+    if (!entry) {
+      const items = await this._fetchCampaigns();
+      entry = items.find(c => (c.id || c.campaign_id) === cid);
+    }
+    if (!entry) {
+      dot.className = 'status-indicator';
+      text.textContent = cid.slice(0, 8) + '…';
+      return;
+    }
+    const cls = statusBadgeClass(entry.status);
+    dot.className = `status-indicator ${cls === 'active' ? 'ok' : (cls === 'success' ? 'ok' : (cls === 'warning' ? 'warning' : ''))}`;
+    const short = entry.name || entry.goal || cid;
+    text.innerHTML = `<span class="text-truncate">${escapeHtml(truncate(short, 28))}</span> <span class="status-badge ${cls}" style="margin-left:6px;">${escapeHtml(entry.status || '—')}</span>`;
+  }
+
+  async _maybeAutoSelect() {
+    if (getActiveCid()) return;             // user/URL already specified
+    const items = await this._fetchCampaigns();
+    if (!items.length) {                    // nothing to pick — leave chip in "no campaign" state
+      this._refreshCampaignChip();
+      return;
+    }
+    const def = resolveDefaultCid(
+      items.map(c => ({ ...c, campaign_id: c.id || c.campaign_id })),
+      c => !['PAUSED', 'COMPLETED', 'DRAFT'].includes(c.status)
+    );
+    if (def) setActiveCid(def);             // dispatches queryChanged → chip refreshes
+    else this._refreshCampaignChip();
+  }
+}
+
+// ── Helpers (file-local, no leaking) ─────────────────────────────────
+function escapeHtml(s = '') {
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+function truncate(s, n) {
+  s = String(s ?? '');
+  return s.length > n ? s.slice(0, n - 1) + '…' : s;
+}
+function fmtDateTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  const today = new Date();
+  const sameDay = d.getFullYear() === today.getFullYear()
+    && d.getMonth() === today.getMonth()
+    && d.getDate() === today.getDate();
+  return sameDay
+    ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+    : d.toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
 }

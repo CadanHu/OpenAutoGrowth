@@ -15,6 +15,11 @@ import { icon }             from '../icons.js';
 import { router }           from '../router.js';
 import { AGENTS }           from '../agent-registry.js';
 import { createAgentFrame } from './agent-frame.js';
+import {
+  getActiveCid,
+  subscribeCampaignChange,
+  renderCampaignBanner,
+} from '../campaign-context.js';
 
 const AGENT_ID    = 'optimizer';
 const AGENT_EVENT = 'OptimizationApplied';
@@ -29,9 +34,16 @@ function escapeHtml(str = '') {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
+function activeCampaign() {
+  const cid = getActiveCid();
+  if (!cid) return null;
+  return getCtx().orchestrator?.campaigns?.get?.(cid) || { campaign_id: cid };
+}
 function optEvents() {
   const ctx = getCtx();
-  return (ctx.eventBus?.history || []).filter(e => e.event_type === AGENT_EVENT);
+  const cid = getActiveCid();
+  return (ctx.eventBus?.history || [])
+    .filter(e => e.event_type === AGENT_EVENT && (!cid || e.campaign_id === cid));
 }
 function getRuleEngine() {
   // The Optimizer agent holds its own RuleEngine instance; the global
@@ -44,6 +56,7 @@ function getRuleEngine() {
 
 // ── Tab: Overview ──────────────────────────────────────────────────
 function renderOverview(panel, { setStatus }) {
+  function paint() {
   const events = optEvents();
   const last   = events[events.length - 1];
   const engine = getRuleEngine();
@@ -51,6 +64,7 @@ function renderOverview(panel, { setStatus }) {
   const totalActions = events.reduce((s, e) => s + (e.payload?.actions?.length || 0), 0);
 
   panel.innerHTML = `
+    ${renderCampaignBanner({ campaign: activeCampaign(), i18nT: t })}
     <div class="metric-row">
       <div class="metric-box">
         <span class="metric-label">${t('metric_state', 'State')}</span>
@@ -80,6 +94,12 @@ function renderOverview(panel, { setStatus }) {
     </div>
   `;
   setStatus(last ? t('status_optimizing', 'Optimizing') : t('metric_idle', 'Idle'));
+  }
+  paint();
+  const unsubCid = subscribeCampaignChange(paint);
+  const ctx = getCtx();
+  const evUnsub = ctx.eventBus?.subscribe?.(AGENT_EVENT, paint);
+  return () => { try { unsubCid(); } catch {} try { evUnsub?.(); } catch {} };
 }
 
 function renderOptSummary(event) {

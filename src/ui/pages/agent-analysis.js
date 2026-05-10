@@ -18,6 +18,11 @@ import { icon }             from '../icons.js';
 import { router }           from '../router.js';
 import { AGENTS }           from '../agent-registry.js';
 import { createAgentFrame } from './agent-frame.js';
+import {
+  getActiveCid,
+  subscribeCampaignChange,
+  renderCampaignBanner,
+} from '../campaign-context.js';
 
 const AGENT_ID = 'analysis';
 
@@ -30,11 +35,25 @@ function escapeHtml(str = '') {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
+// Look up the current campaign object from the orchestrator Map (kept in
+// sync with backend by ui/pages/agent-orchestrator.js :: ensureCampaigns).
+// Returns null when no cid is selected or it's not in the Map yet.
+function activeCampaign() {
+  const cid = getActiveCid();
+  if (!cid) return null;
+  return getCtx().orchestrator?.campaigns?.get?.(cid) || { campaign_id: cid };
+}
+// Filter helpers — when a cid is selected, return only events for it;
+// otherwise fall back to the full bus history (legacy behavior).
 function reportEvents() {
-  return (getCtx().eventBus?.history || []).filter(e => e.event_type === 'ReportGenerated');
+  const cid = getActiveCid();
+  return (getCtx().eventBus?.history || [])
+    .filter(e => e.event_type === 'ReportGenerated' && (!cid || e.campaign_id === cid));
 }
 function anomalyEvents() {
-  return (getCtx().eventBus?.history || []).filter(e => e.event_type === 'AnomalyDetected');
+  const cid = getActiveCid();
+  return (getCtx().eventBus?.history || [])
+    .filter(e => e.event_type === 'AnomalyDetected' && (!cid || e.campaign_id === cid));
 }
 function latestReport() {
   const list = reportEvents();
@@ -126,11 +145,24 @@ let currentModel = 'linear';
 
 // ── Tab: Overview ─────────────────────────────────────────────────
 function renderOverview(panel, { setStatus }) {
-  const event = latestReport();
+  function paint() {
+    const event = latestReport();
+    const banner = renderCampaignBanner({ campaign: activeCampaign(), i18nT: t });
+    paintInner(panel, event, banner, setStatus);
+  }
+  paint();
+  const unsub = subscribeCampaignChange(paint);
+  const ctx = getCtx();
+  const eventUnsub = ctx.eventBus?.subscribe?.('ReportGenerated', paint);
+  return () => { try { unsub(); } catch {} try { eventUnsub?.(); } catch {} };
+}
+
+function paintInner(panel, event, banner, setStatus) {
   const m = reportMetrics(event);
   const anomCount = (event?.payload?.anomalies || []).length;
 
   panel.innerHTML = `
+    ${banner}
     <div class="metric-row">
       <div class="metric-box">
         <span class="metric-label">${t('analysis_metric_roas', 'ROAS')}</span>
