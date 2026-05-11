@@ -19,6 +19,7 @@ import {
   getActiveCid,
   subscribeCampaignChange,
   renderCampaignBanner,
+  renderMockBanner,
 } from '../campaign-context.js';
 
 const AGENT_ID = 'strategy';
@@ -242,6 +243,10 @@ function renderWhatIf(panel) {
 
   function paint() {
     panel.innerHTML = `
+      ${renderMockBanner({
+        what: t('mock_what_strategy_whatif', 'What-If is a frontend sandbox preview — it doesn\'t affect any real campaign.'),
+        i18nT: t,
+      })}
       <div class="replan-banner">
         ${icon('sparkles', 'sm')}
         <span>${t('strategy_whatif_warning', 'Preview mode · Does not modify any campaign.')}</span>

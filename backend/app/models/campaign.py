@@ -49,7 +49,7 @@ class Campaign(Base):
             "DRAFT", "PLANNING", "PLANNING_FAILED", "PENDING_REVIEW",
             "PRODUCTION", "PRODUCTION_FAILED", "DEPLOYED", "MONITORING",
             "OPTIMIZING", "LOOP_1", "LOOP_2", "LOOP_3", "LOOP_4", "LOOP_5",
-            "PAUSED", "COMPLETED",
+            "PAUSED", "PAUSED_FOR_APPROVAL", "COMPLETED",
             name="campaign_status",
         ),
         nullable=False,

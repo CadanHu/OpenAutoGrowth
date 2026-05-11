@@ -22,6 +22,7 @@ import {
   getActiveCid,
   subscribeCampaignChange,
   renderCampaignBanner,
+  renderMockBanner,
 } from '../campaign-context.js';
 
 const AGENT_ID = 'analysis';
@@ -243,6 +244,11 @@ function renderAttribution(panel) {
     });
 
     panel.innerHTML = `
+      ${renderMockBanner({
+        what: t('mock_what_attribution', 'Per-channel spend split is synthesized from a deterministic hash of reportId, not real attribution.'),
+        why:  t('mock_what_attribution_why', 'Backend ReportGenerated doesn\'t yet emit per-channel breakdown — replaced with real touchpoint data in v0.0.3.'),
+        i18nT: t,
+      })}
       <div class="attr-toolbar">
         <span class="attr-toolbar-label">${t('analysis_attr_model', 'Attribution model')}</span>
         <div class="attr-model-segmented" role="tablist">

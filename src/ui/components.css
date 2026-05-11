@@ -72,7 +72,7 @@ h3 { font-size: var(--fs-h3); line-height: var(--lh-heading); font-weight: var(-
   margin: 0 auto;
   padding: 0 var(--page-gutter);
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, auto);
   align-items: center;
   gap: var(--sp-5);
 }
@@ -242,6 +242,8 @@ h3 { font-size: var(--fs-h3); line-height: var(--lh-heading); font-weight: var(-
   font-weight: var(--fw-medium);
   cursor: pointer;
   max-width: 320px;
+  min-width: 0;
+  flex-shrink: 1;
   transition: all var(--dur-fast) var(--ease-smooth);
 }
 .campaign-chip:hover { border-color: var(--accent-primary); color: var(--text-primary); }
@@ -250,8 +252,49 @@ h3 { font-size: var(--fs-h3); line-height: var(--lh-heading); font-weight: var(-
   align-items: center;
   gap: 6px;
   min-width: 0;
+  overflow: hidden;
 }
-.campaign-chip-text .text-truncate { max-width: 200px; }
+.campaign-chip-text .text-truncate {
+  max-width: 200px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.campaign-chip-text .status-badge {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* ── Top-nav responsive collapse ──────────────────────────────── */
+.nav-right { flex-wrap: nowrap; min-width: 0; }
+.btn-pause-all-label,
+.nav-status .status-text { transition: opacity 0.15s ease; }
+
+@media (max-width: 1280px) {
+  .campaign-chip { max-width: 240px; }
+  .campaign-chip-text .text-truncate { max-width: 140px; }
+}
+@media (max-width: 1100px) {
+  .btn-pause-all-label { display: none; }
+  .nav-status .status-text { display: none; }
+  #user-chip strong { display: none !important; }
+  #user-chip small { display: none !important; }
+}
+@media (max-width: 960px) {
+  .campaign-chip { max-width: 180px; }
+  .campaign-chip-text .text-truncate { max-width: 90px; }
+  .nav-links .nav-link[href="#/integrations"],
+  .nav-links .nav-link[href="#/users"] { display: none; }
+}
+@media (max-width: 800px) {
+  .campaign-chip-text .text-truncate { display: none; }
+  .nav-links .nav-link[href="#/campaigns"] { display: none; }
+}
+@media (max-width: 640px) {
+  .campaign-chip-text .status-badge { display: none; }
+  .brand-name { display: none; }
+}
 
 .campaign-menu {
   /* Reuse the existing .nav-menu open/close transition rules. */
@@ -304,8 +347,8 @@ h3 { font-size: var(--fs-h3); line-height: var(--lh-heading); font-weight: var(-
 .agent-cid-banner {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 14px;
+  gap: 16px;
+  padding: 12px 18px;
   margin: 0 0 16px;
   background: var(--bg-L1);
   border: 1px solid var(--border-subtle);
@@ -313,22 +356,382 @@ h3 { font-size: var(--fs-h3); line-height: var(--lh-heading); font-weight: var(-
   border-radius: var(--radius-sm);
   font-size: var(--fs-xs);
   flex-wrap: wrap;
+  row-gap: 8px;
 }
 .agent-cid-banner.empty {
   border-left-color: var(--text-tertiary);
   background: var(--bg-L2);
 }
+.agent-cid-banner-primary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex: 1 1 280px;
+  min-width: 0;
+}
+.agent-cid-banner-eyebrow {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 .agent-cid-banner-name {
   font-weight: var(--fw-medium);
   color: var(--text-primary);
-  max-width: 360px;
+  min-width: 0;
+  flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-cid-banner-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+.agent-cid-banner .status-badge,
+.agent-cid-banner .code-inline {
+  flex-shrink: 0;
   white-space: nowrap;
 }
 .agent-cid-banner-hint {
   margin-left: auto;
   opacity: 0.7;
+  flex-shrink: 0;
+}
+/* ── Responsive breakpoints ────────────────────────────────── */
+@media (max-width: 1080px) {
+  .agent-cid-banner-hint { display: none; }
+}
+@media (max-width: 720px) {
+  .agent-cid-banner {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .agent-cid-banner-primary,
+  .agent-cid-banner-meta { flex: 1 1 auto; }
+  .agent-cid-banner-name { white-space: normal; }
+}
+@media (max-width: 480px) {
+  .agent-cid-banner-stamp { display: none; }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Onboarding tour (src/ui/onboarding.js)
+   Spotlight + floating tooltip card. The backdrop is a single dim
+   element; we cut the "hole" by positioning .tour-spotlight on top
+   of it with a thick outline (cheaper than SVG mask, looks the same).
+   ══════════════════════════════════════════════════════════════════ */
+
+.tour-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  pointer-events: auto;
+}
+.tour-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(28, 22, 12, 0.40);
+  /* No backdrop-filter: blur — earlier versions blurred everything,
+     including the spotlight hole, so users couldn't read the very
+     element being highlighted. Plain dimming is enough. */
+}
+.tour-spotlight {
+  position: fixed;
+  pointer-events: none;
+  border-radius: 10px;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent-primary) 75%, transparent),
+    0 0 0 9999px rgba(28, 22, 12, 0.40);
+  transition: top 0.25s var(--ease-smooth, ease),
+              left 0.25s var(--ease-smooth, ease),
+              width 0.25s var(--ease-smooth, ease),
+              height 0.25s var(--ease-smooth, ease);
+}
+/* When the spotlight is shown, its huge outer box-shadow already dims
+   the rest of the screen, so kill the plain backdrop to avoid stacking
+   two dim layers on top of each other. */
+.tour-spotlight:not([style*="display: none"]) ~ .tour-backdrop,
+.tour-overlay:has(.tour-spotlight:not([style*="display: none"])) .tour-backdrop {
+  background: transparent;
+}
+
+.tour-card {
+  position: fixed;
+  width: min(380px, calc(100vw - 32px));
+  background: var(--bg-L0, #fff);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 32px rgba(28, 22, 12, 0.25);
+  padding: 0;
+  color: var(--text-primary);
+  z-index: 1;
+}
+.tour-card[data-mode="modal"].centered { /* center the welcome / done cards */ }
+
+.tour-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px 0;
+}
+.tour-step-counter {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.tour-skip-btn {
+  width: 28px; height: 28px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.tour-skip-btn:hover {
+  border-color: var(--border-default);
+  color: var(--text-primary);
+}
+
+.tour-card-body { padding: 8px 18px 16px; }
+.tour-card-title {
+  margin: 0 0 8px;
+  font-family: var(--font-serif, Georgia, serif);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.tour-card-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+.tour-card-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+.tour-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px 16px;
+  border-top: 1px solid var(--border-subtle);
+}
+.tour-auto-hint { margin-right: auto; }
+
+/* ── Governance Inbox + nav pill ──────────────────────────────────── */
+.nav-pill {
+  display: inline-flex;
+  min-width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  margin-left: 6px;
+  border-radius: var(--radius-full);
+  background: var(--warning);
+  color: var(--text-inverse, #fff);
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  line-height: 1;
+}
+.nav-link[hidden] { display: none; }
+
+.governance-layout {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 16px;
+  margin-top: 16px;
+}
+@media (max-width: 900px) {
+  .governance-layout { grid-template-columns: 1fr; }
+}
+
+.governance-list {
+  background: var(--bg-L1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.governance-list-item {
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font: inherit;
+  color: var(--text-primary);
+  transition: background var(--dur-fast) var(--ease-smooth);
+}
+.governance-list-item:hover { background: var(--bg-L2); }
+.governance-list-item.active {
+  background: var(--accent-soft);
+  border-color: var(--accent-primary);
+}
+.governance-list-item-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.governance-list-item-title {
+  font-size: 13px;
+  font-weight: var(--fw-medium);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.governance-empty { padding: 16px; }
+
+.governance-detail {
+  background: var(--bg-L1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.governance-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.governance-detail-head h3 {
+  margin: 0 0 4px;
+  font-family: var(--font-serif, Georgia, serif);
+  font-size: 16px;
+}
+.governance-context summary {
+  cursor: pointer;
+  font-weight: var(--fw-medium);
+  font-size: 13px;
+}
+.governance-context .code-block {
+  background: var(--bg-L2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  font-size: 11px;
+  overflow-x: auto;
+  margin-top: 8px;
+}
+
+.governance-tasks { display: flex; flex-direction: column; gap: 12px; }
+.governance-task {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  background: var(--bg-L0, var(--bg-L1));
+}
+.governance-task.open { border-left: 3px solid var(--warning); }
+.governance-task.decided { opacity: 0.85; }
+.governance-task-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.governance-task-title {
+  flex: 1;
+  font-weight: var(--fw-medium);
+  font-size: 13px;
+}
+.governance-task-feedback {
+  background: var(--bg-L2);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 12px;
+  font-style: italic;
+  margin: 8px 0;
+}
+.governance-task-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+/* ── Demo / mock data banner ─────────────────────────────────────────
+   Used to mark tabs whose data comes from a frontend simulator (random
+   numbers, in-browser memory) rather than the real backend pipeline. */
+.mock-data-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  margin: 0 0 16px;
+  background: color-mix(in srgb, var(--warning) 12%, var(--bg-L1));
+  border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.mock-data-banner.warn {
+  background: color-mix(in srgb, var(--danger) 10%, var(--bg-L1));
+  border-color: color-mix(in srgb, var(--danger) 35%, transparent);
+}
+.mock-data-banner-tag {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: var(--warning);
+  color: var(--text-inverse, #fff);
+  white-space: nowrap;
+}
+.mock-data-banner.warn .mock-data-banner-tag { background: var(--danger); }
+.mock-data-banner-text { flex: 1; }
+
+/* The "Replay tour" link planted on the Hub */
+.tour-replay-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  background: transparent;
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-full);
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.tour-replay-link:hover {
+  color: var(--accent-primary);
+  border-color: var(--accent-primary);
+  border-style: solid;
 }
 
 .nav-status {
@@ -586,6 +989,64 @@ h3 { font-size: var(--fs-h3); line-height: var(--lh-heading); font-weight: var(-
 .agent-neuron.working {
   animation: neuron-pulse-warm 2.4s var(--ease-organic) infinite;
 }
+
+.agent-neuron.fading {
+  background: var(--bg-L0);
+  border-color: var(--neuron-color, var(--accent-primary));
+  color: var(--neuron-color, var(--accent-primary));
+  opacity: 0.45;
+  transition: opacity 1.6s var(--ease-smooth),
+              border-color 1.6s var(--ease-smooth),
+              background 1.6s var(--ease-smooth),
+              color 1.6s var(--ease-smooth),
+              box-shadow 1.6s var(--ease-smooth);
+}
+.agent-neuron.fading .neuron-label {
+  color: var(--neuron-color, var(--accent-primary));
+}
+
+/* Review-rejected rebound: brief red shake + flash on reviewer & strategy */
+.agent-neuron.rebound {
+  animation: neuron-rebound 1.4s var(--ease-organic) 1;
+}
+.svg-edge.rebound {
+  stroke: var(--danger, #c0392b);
+  animation: edge-rebound 1.4s ease-out 1;
+}
+@keyframes neuron-rebound {
+  0%   { transform: translateX(0);   box-shadow: 0 0 0 0 rgba(192,57,43,0.0); border-color: var(--danger, #c0392b); }
+  15%  { transform: translateX(-6px); box-shadow: 0 0 0 6px rgba(192,57,43,0.35); }
+  30%  { transform: translateX(5px);  box-shadow: 0 0 0 10px rgba(192,57,43,0.2); }
+  45%  { transform: translateX(-3px); }
+  60%  { transform: translateX(2px); }
+  100% { transform: translateX(0);    box-shadow: 0 0 0 0 rgba(192,57,43,0); }
+}
+@keyframes edge-rebound {
+  0%   { stroke-width: 2.5; stroke-dashoffset: 0;   stroke-dasharray: 6 10; }
+  100% { stroke-width: 1.5; stroke-dashoffset: 100; stroke-dasharray: 6 10; }
+}
+
+/* Loop-count badge on the optimizer neuron */
+.neuron-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  background: var(--accent-primary);
+  color: #fff;
+  font-size: 11px;
+  font-weight: var(--fw-semibold);
+  line-height: 22px;
+  text-align: center;
+  box-shadow: var(--shadow-xs);
+  pointer-events: none;
+  z-index: 3;
+}
+.neuron-badge[hidden] { display: none; }
+
 @keyframes neuron-pulse-warm {
   0%   { box-shadow: 0 0 0 0    rgba(196,137,74,0.35), var(--shadow-sm); }
   70%  { box-shadow: 0 0 0 14px rgba(196,137,74,0),     var(--shadow-sm); }
@@ -2092,6 +2553,16 @@ input[type=range] { accent-color: var(--accent-primary); }
    Orchestrator page — FSM View
    ══════════════════════════════════════════════════════════════════ */
 
+/* Generic single-line truncation utility. Must live globally because
+   several pages slap `class="text-truncate"` on inner spans expecting it
+   to clamp to one line (fsm sidebar, campaign menu, etc.). */
+.text-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
 .fsm-layout {
   display: grid;
   grid-template-columns: 240px 1fr;
@@ -2121,6 +2592,15 @@ input[type=range] { accent-color: var(--accent-primary); }
 .fsm-sidebar-item-main {
   min-width: 0;
   flex: 1;
+  overflow: hidden;
+}
+.fsm-sidebar-item-meta {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 .fsm-sidebar-item:hover {

@@ -76,6 +76,10 @@ function renderTemplate() {
         ${icon('sprout', 'md')}
         <span>${i18n.t('btn_launch_new')}</span>
       </button>
+      <button id="btn-replay-tour" class="tour-replay-link" type="button" style="margin-top: 12px;">
+        ${icon('sparkles', 'sm')}
+        <span>${i18n.t('tour_replay') || 'Replay tour'}</span>
+      </button>
     </section>
 
     <section class="status-strip" data-section="status">
@@ -139,10 +143,13 @@ function renderCanvas() {
     const iconName = agent?.icon || 'dot';
     const label = agent?.name || '';
     const cls = `agent-neuron${central ? ' central' : ''}${gate ? ' gate' : ''}`;
+    const badge = (id === 'node-optimizer')
+      ? `<span class="neuron-badge" id="optimizer-loop-badge" hidden></span>` : '';
     return `
       <button id="${id}" class="${cls}" data-agent="${agentKey || ''}" aria-label="Open ${label}" style="--neuron-color:${color}">
         <span class="neuron-icon">${icon(iconName, central ? 'lg' : 'md')}</span>
         <span class="neuron-label">${label}</span>
+        ${badge}
       </button>`;
   };
 
@@ -274,6 +281,14 @@ class Hub {
     const handler = () => this._openLaunchModal();
     btn.addEventListener('click', handler);
     this._boundBtnLaunch = { el: btn, fn: handler };
+
+    // Replay-tour link — calls into the onboarding engine exposed on window.OAG.
+    const replay = document.getElementById('btn-replay-tour');
+    if (replay) {
+      replay.addEventListener('click', () => {
+        try { window.OAG?.tour?.reset?.(); } catch (e) { console.warn('[hub] tour reset', e); }
+      });
+    }
   }
 
   _bindCanvasNodes() {
@@ -316,8 +331,14 @@ class Hub {
     });
 
     sub('ReviewCompleted', ({ payload }) => {
-      this.lastReviewStatus = payload?.status;
-      this._advancePipeline('PENDING_REVIEW');
+      const status = payload?.status;
+      this.lastReviewStatus = status;
+      if (status && status !== 'APPROVED') {
+        this.log(i18n.t('log_review_rejected', { feedback: payload?.feedback || '' }), 'warning');
+        this._triggerReviewRebound();
+      } else {
+        this._advancePipeline('PENDING_REVIEW');
+      }
     });
 
     sub('PlanGenerated', ({ payload: { plan } }) => {
@@ -346,12 +367,6 @@ class Hub {
       this._advancePipeline('MULTIMODAL');
     });
 
-    // Backend emits "ContentApproved" via the reviewer; treat it like a
-    // PENDING_REVIEW → review-passed transition for the canvas.
-    sub('ContentApproved', () => {
-      this._advancePipeline('PENDING_REVIEW');
-    });
-
     sub('AdDeployed', ({ payload }) => {
       const platforms = payload.platforms?.join(', ') || '';
       this.log(i18n.t('log_ads_deployed', { platforms }), 'success');
@@ -371,6 +386,7 @@ class Hub {
       const types = payload.actions?.map(a => a.type).join(', ') || 'NONE';
       this.log(i18n.t('log_optimizer_fired', { types }), 'warning');
       this._updateAgentCard('optimizer', { metric: `#${payload.loop_count ?? 0}`, label: i18n.t('metric_cycle'), event: types });
+      this._updateOptimizerLoopBadge(payload.loop_count);
       this._advancePipeline('OPTIMIZING');
     });
 
@@ -406,15 +422,62 @@ class Hub {
     this.currentStatus = status;
 
     document.querySelectorAll('.agent-neuron, .svg-edge').forEach(el => {
-      el.classList.remove('active', 'working');
+      el.classList.remove('active', 'working', 'fading');
     });
 
-    current.nodes.forEach(id => document.getElementById(id)?.classList.add('active'));
-    current.edges.forEach(id => document.getElementById(id)?.classList.add('active'));
+    // Terminal/idle states: stop all infinite animations on the canvas.
+    if (status === 'COMPLETED' || status === 'IDLE' || status === 'DRAFT') return;
 
-    if (current.nodes.length > 0) {
-      const lastNodeId = current.nodes[current.nodes.length - 1];
-      document.getElementById(lastNodeId)?.classList.add('working');
+    const nodes = current.nodes;
+    if (nodes.length === 0) return;
+
+    // The real graph fans out strategy → content_gen ‖ multimodal in parallel.
+    // While either branch is in flight (CONTENT_GEN or MULTIMODAL), light up
+    // BOTH so the parallelism is visible, with strategy fading behind them.
+    if (status === 'CONTENT_GEN' || status === 'MULTIMODAL') {
+      document.getElementById('node-contentgen')?.classList.add('active', 'working');
+      document.getElementById('node-multimodal')?.classList.add('active', 'working');
+      document.getElementById('node-strategy')?.classList.add('fading');
+    } else {
+      const currentNodeId = nodes[nodes.length - 1];
+      document.getElementById(currentNodeId)?.classList.add('active', 'working');
+      if (nodes.length > 1) {
+        document.getElementById(nodes[nodes.length - 2])?.classList.add('fading');
+      }
+    }
+
+    current.edges.forEach(id => document.getElementById(id)?.classList.add('active'));
+  }
+
+  // Flash the review→strategy path when the reviewer rejects, then reset
+  // the canvas rank so the upcoming StrategyDecided event can advance again.
+  _triggerReviewRebound() {
+    const nodeIds = ['node-reviewer', 'node-strategy'];
+    const edgeIds = ['edge-3-top', 'edge-3-mid', 'edge-3-bot', 'edge-2-top', 'edge-2-mid', 'edge-2-bot'];
+    [...nodeIds, ...edgeIds].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.classList.remove('rebound');
+      // Force reflow so the animation restarts on re-add.
+      void el.offsetWidth;
+      el.classList.add('rebound');
+      setTimeout(() => el.classList.remove('rebound'), 1400);
+    });
+    // Allow the canvas to re-advance forward from STRATEGY when the revise
+    // loop publishes StrategyDecided again.
+    this.currentStatus = 'PLANNING';
+  }
+
+  _updateOptimizerLoopBadge(loopCount) {
+    const badge = document.getElementById('optimizer-loop-badge');
+    if (!badge) return;
+    const n = Number(loopCount) || 0;
+    if (n <= 0) {
+      badge.hidden = true;
+      badge.textContent = '';
+    } else {
+      badge.hidden = false;
+      badge.textContent = `L${n}`;
     }
   }
 
@@ -611,7 +674,10 @@ class Hub {
     const backendMetric = metricMap[objective] || 'ROAS';
     const campaignGoal = `[Type: ${type.toUpperCase()}] Objective: ${objective}. Desc: ${desc}. URL: ${url}. Region: ${location}.`;
 
+    const campaignName = (desc || '').trim().slice(0, 60) || `${type.toUpperCase()} · ${objective}`;
+
     const response = await api.createCampaign({
+      name: campaignName,
       goal: campaignGoal,
       campaign_type: type,
       budget: { total: budget, currency: 'CNY' },

@@ -16,6 +16,7 @@
 import { i18n }   from '../../i18n/index.js';
 import { icon }   from '../icons.js';
 import { router } from '../router.js';
+import { prettyCampaignName } from '../campaign-context.js';
 
 function getCtx() { return window.OAG || {}; }
 function t(k, d)  { return i18n.t(k) || d; }
@@ -336,7 +337,7 @@ function renderEventPayload(eventType, payload) {
 
 function renderCampaignRow(c, flow) {
   const cid = c.campaign_id || c.id;
-  const goal = c.goal || c.name || '—';
+  const goal = prettyCampaignName(c, '') || '—';
   const status = c.status || '—';
   const budget = c.budget?.total
     ? `${c.budget?.currency || ''} ${c.budget.total}`.trim()

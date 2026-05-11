@@ -47,7 +47,14 @@ export class WSBroadcaster {
     // ── Internal ──────────────────────────────────────────────────────────
 
     _connect(campaignId) {
-        const socket = new WebSocket(`${WS_BASE}/${campaignId}`);
+        // The backend's WS handler authorizes via `?token=…` (browsers can't
+        // set Authorization on a WebSocket constructor). Without a token the
+        // server closes the socket with 1008.
+        const tok = (typeof localStorage !== 'undefined') && localStorage.getItem('oag_access_token');
+        const url = tok
+            ? `${WS_BASE}/${campaignId}?token=${encodeURIComponent(tok)}`
+            : `${WS_BASE}/${campaignId}`;
+        const socket = new WebSocket(url);
         const entry = { socket, callbacks: new Set() };
         this._connections.set(campaignId, entry);
 

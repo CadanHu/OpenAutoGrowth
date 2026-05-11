@@ -90,21 +90,33 @@ class RuleEngine:
         self.rules = sorted(rules or DEFAULT_RULES, key=lambda r: r["priority"])
         self._cooldown: dict[str, float] = {}   # "campaignId:ruleId" → last_fired_ms
 
-    def evaluate(self, context: dict, campaign_id: str) -> list[dict]:
+    def evaluate(
+        self,
+        context: dict,
+        campaign_id: str,
+        overrides: dict[str, bool] | None = None,
+    ) -> list[dict]:
         """
         Evaluate all enabled rules against context.
         Returns deduplicated list of OptAction dicts.
+
+        `overrides` maps rule_id → enabled and supersedes the rule's own
+        `enabled` flag. Lets a per-process, per-call enable/disable apply
+        without mutating the shared `self.rules` list (which would race
+        across concurrent campaigns sharing the same worker).
         """
         actions = []
         for rule in self.rules:
-            if not rule.get("enabled", True):
+            rid = rule["id"]
+            enabled = overrides[rid] if (overrides and rid in overrides) else rule.get("enabled", True)
+            if not enabled:
                 continue
-            if self._on_cooldown(campaign_id, rule["id"], rule.get("cooldown_ms", 0)):
+            if self._on_cooldown(campaign_id, rid, rule.get("cooldown_ms", 0)):
                 continue
             if self._eval_condition(rule["condition"], context):
-                logger.info("rule_fired", rule_id=rule["id"], name=rule["name"])
-                actions.append({"rule_id": rule["id"], **rule["action"]})
-                self._record_fire(campaign_id, rule["id"])
+                logger.info("rule_fired", rule_id=rid, name=rule["name"])
+                actions.append({"rule_id": rid, **rule["action"]})
+                self._record_fire(campaign_id, rid)
 
         return self._dedup(actions)
 

@@ -28,6 +28,10 @@ WS_EVENT_MAP = {
     "ReportGenerated":     "metrics.updated",
     "AnomalyDetected":     "anomaly.detected",
     "OptimizationApplied": "optimization.applied",
+    "ReviewCompleted":     "review.completed",
+    "ApprovalRequired":    "governance.approval_required",
+    "ApprovalResolved":    "governance.approval_resolved",
+    "ApprovalEscalated":   "governance.approval_escalated",
 }
 
 

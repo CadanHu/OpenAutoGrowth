@@ -79,6 +79,99 @@ export class CampaignAPI {
         return this._request('GET', `/campaigns/${id}/usage`);
     }
 
+    // ── Governance (human-in-the-loop approval gate) ─────────────────────
+
+    async listGovernanceInbox({ role, status = 'OPEN' } = {}) {
+        const qs = new URLSearchParams();
+        if (role) qs.set('role', role);
+        if (status) qs.set('status', status);
+        const suffix = qs.toString() ? `?${qs.toString()}` : '';
+        return this._request('GET', `/governance/inbox${suffix}`);
+    }
+    async getGovernanceCase(caseId) {
+        return this._request('GET', `/governance/cases/${encodeURIComponent(caseId)}`);
+    }
+    async decideGovernanceTask(taskId, { decision, feedback }) {
+        return this._request('POST', `/governance/tasks/${encodeURIComponent(taskId)}/decide`, { decision, feedback });
+    }
+    async listGovernanceRules() {
+        return this._request('GET', '/governance/rules');
+    }
+
+    // ── Optimizer rules (backend) ────────────────────────────────────────
+
+    async listOptimizerRules() {
+        return this._request('GET', '/optimizer/rules');
+    }
+    async setOptimizerRuleEnabled(ruleId, enabled) {
+        return this._request('PATCH', `/optimizer/rules/${encodeURIComponent(ruleId)}`, { enabled });
+    }
+    async clearOptimizerRuleOverride(ruleId) {
+        return this._request('DELETE', `/optimizer/rules/${encodeURIComponent(ruleId)}/override`);
+    }
+
+    // ── Identity / RBAC ──────────────────────────────────────────────────
+
+    async login(email, password) {
+        return this._request('POST', '/identity/login', { email, password });
+    }
+
+    async refreshToken(refresh_token) {
+        return this._request('POST', '/identity/refresh', { refresh_token });
+    }
+
+    async getMe() {
+        return this._request('GET', '/identity/me');
+    }
+
+    async createUser({ email, password, role = 'MARKETER', tenant_id, gov_roles = [] } = {}) {
+        return this._request('POST', '/identity/users', { email, password, role, tenant_id, gov_roles });
+    }
+
+    async grantGovRole(userId, role) {
+        return this._request('POST', `/identity/users/${userId}/grant`, { role });
+    }
+
+    async revokeGovRole(userId, role) {
+        return this._request('POST', `/identity/users/${userId}/revoke`, { role });
+    }
+
+    async listUsers(tenantId) {
+        const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+        return this._request('GET', `/identity/users${qs}`);
+    }
+
+    async listTenants() {
+        return this._request('GET', '/identity/tenants');
+    }
+
+    async createTenant({ name, slug }) {
+        return this._request('POST', '/identity/tenants', { name, slug });
+    }
+
+    async getMyNotifyPrefs() {
+        return this._request('GET', '/identity/me/notifications');
+    }
+
+    async updateMyNotifyPrefs(prefs) {
+        return this._request('PATCH', '/identity/me/notifications', prefs);
+    }
+
+    // ── Audit Log ────────────────────────────────────────────────────────
+
+    async listAudit({ actor, action, entity, entity_id, from, to, limit = 50, offset = 0 } = {}) {
+        const qs = new URLSearchParams();
+        if (actor)     qs.set('actor', actor);
+        if (action)    qs.set('action', action);
+        if (entity)    qs.set('entity', entity);
+        if (entity_id) qs.set('entity_id', entity_id);
+        if (from)      qs.set('from', from);
+        if (to)        qs.set('to', to);
+        qs.set('limit',  String(limit));
+        qs.set('offset', String(offset));
+        return this._request('GET', `/audit?${qs.toString()}`);
+    }
+
     // ── GET /v1/campaigns/:id/memory ─────────────────────────────────────
 
     async getCampaignMemory(id, { limit = 20, memory_type } = {}) {
@@ -190,10 +283,13 @@ export class CampaignAPI {
 
     async _request(method, path, body = null) {
         try {
-            const options = {
-                method,
-                headers: { 'Content-Type': 'application/json' },
-            };
+            const headers = { 'Content-Type': 'application/json' };
+            // Attach bearer token if the user is logged in. Stored in
+            // localStorage by the login flow (src/ui/auth.js).
+            const tok = (typeof localStorage !== 'undefined') && localStorage.getItem('oag_access_token');
+            if (tok) headers['Authorization'] = `Bearer ${tok}`;
+
+            const options = { method, headers };
             if (body) options.body = JSON.stringify(body);
 
             const res = await fetch(`${API_BASE}${path}`, options);
@@ -217,6 +313,16 @@ export class CampaignAPI {
             }
 
             if (!res.ok) {
+                // Centralized auth-error handling: clear stale token and
+                // notify the shell so it can show the login modal.
+                if (res.status === 401 && tok) {
+                    try {
+                        localStorage.removeItem('oag_access_token');
+                        localStorage.removeItem('oag_refresh_token');
+                        localStorage.removeItem('oag_user');
+                        document.dispatchEvent(new CustomEvent('auth:unauthorized'));
+                    } catch {}
+                }
                 return {
                     success: false,
                     error: json.detail || json.error?.message || `HTTP ${res.status}`,

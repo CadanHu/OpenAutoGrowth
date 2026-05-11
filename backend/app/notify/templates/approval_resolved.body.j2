@@ -1,0 +1,12 @@
+An approval case was resolved.
+
+Campaign ID:      {{ campaign_id }}
+Stage:            {{ stage }}
+Outcome:          {{ outcome }}
+
+Decisions:
+{% for d in decisions -%}
+  - {{ d.role }} / {{ d.rule_code }}: {{ d.status }}{% if d.feedback %} — {{ d.feedback }}{% endif %}
+{% endfor %}
+
+— OpenAutoGrowth

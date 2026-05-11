@@ -73,3 +73,22 @@ if _PGVECTOR_AVAILABLE and Vector is not None:
     AgentMemory.__table__.append_column(  # type: ignore[attr-defined]
         Column("embedding", Vector(1536))
     )
+
+
+class OptimizerRuleOverride(Base):
+    """Per-rule enabled overrides for the backend rule engine.
+
+    The rule engine ships with a hard-coded `DEFAULT_RULES` list in
+    `app/core/rule_engine.py`. Rows in this table override the `enabled`
+    flag of a default rule by `rule_id`. Absence of a row = use the
+    default. This is how the UI's Rules tab actually steers the worker.
+    """
+    __tablename__ = "optimizer_rule_overrides"
+
+    rule_id:    Mapped[str]      = mapped_column(String(100), primary_key=True)
+    enabled:    Mapped[bool]     = mapped_column(Boolean, nullable=False, default=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )

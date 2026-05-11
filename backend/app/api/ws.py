@@ -4,14 +4,58 @@ Bridges Redis Pub/Sub to connected browser clients.
 """
 import asyncio
 import json
+import uuid
 
 import structlog
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
+from jose import JWTError
 
 from app.core.event_bus import event_bus
+from app.core.security import decode_token
+from app.database import async_session_factory
+from app.models.campaign import Campaign
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()
+
+
+async def _authorize_ws(websocket: WebSocket, campaign_id: str) -> bool:
+    """Enforce auth + tenant scope on WS subscribe.
+
+    Browsers can't set Authorization headers on WebSocket constructors, so
+    the client passes the JWT via the `token` query param. Returns True if
+    the connection should proceed.
+    """
+    token = websocket.query_params.get("token") or ""
+    if not token:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return False
+    try:
+        payload = decode_token(token)
+    except JWTError:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return False
+    if payload.get("type") != "access":
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return False
+
+    held = {r.upper() for r in (payload.get("gov_roles") or [])}
+    if "ADMIN" in held:
+        return True  # ADMIN can subscribe cross-tenant
+
+    user_tenant = payload.get("tenant_id")
+    try:
+        cid = uuid.UUID(campaign_id)
+    except ValueError:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return False
+    async with async_session_factory() as db:
+        camp = await db.get(Campaign, cid)
+        if not camp or str(camp.org_id) != str(user_tenant):
+            # Same logic as REST 404-on-cross-tenant: don't leak existence.
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return False
+    return True
 
 
 @router.websocket("/ws/{campaign_id}")
@@ -19,11 +63,17 @@ async def campaign_websocket(websocket: WebSocket, campaign_id: str):
     """
     Clients connect here to receive real-time campaign events.
 
+    Auth: `?token=<JWT>` in the connect URL. Cross-tenant subscriptions are
+    rejected with 1008 (policy violation).
+
     Message protocol:
       Server → Client: { type, campaign_id, payload, timestamp }
       Client → Server: { type: "ping" }  →  { type: "pong" }
     """
     await websocket.accept()
+    if not await _authorize_ws(websocket, campaign_id):
+        logger.info("ws_unauthorized", campaign_id=campaign_id)
+        return
     logger.info("ws_connected", campaign_id=campaign_id)
 
     queue: asyncio.Queue = asyncio.Queue()

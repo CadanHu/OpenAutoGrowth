@@ -33,6 +33,7 @@ Decision Logic:
 Response Format (Strict JSON):
 {
   "reasoning": "Brief explanation of the strategy",
+  "regions": ["ISO-2 codes — markets the campaign should reach. Always include the home region first; add more only when the goal/channels imply cross-border targeting."],
   "channel_plan": [
     {
       "channel": "string",
@@ -43,6 +44,11 @@ Response Format (Strict JSON):
     }
   ]
 }
+
+Region rules:
+- If the goal mentions a country/region by name or product expansion ("出海", "global launch", "拓展东南亚"), include those regions.
+- If the channels include WeChat/Zhihu/Weibo, assume CN. If TikTok/Meta/Google are explicit, lean toward the home + 1-2 adjacent markets.
+- Otherwise default to [home_region] only. Never invent regions for purely domestic campaigns.
 """
 
 def _get_fallback_plan(channels: list[str], total_budget: int) -> dict:
@@ -78,11 +84,14 @@ async def strategy_node(state: CampaignState) -> dict:
     channels = constraints.get("channels") or ["tiktok", "meta", "google", "wechat"]
     report = state.get("report")
 
+    home_region = (constraints.get("region") or "").upper() or "CN"
+
     prompt = f"""
 Campaign Goal: {goal}
 KPI Targets: {json.dumps(kpi)}
 Total Budget: {total_budget}
 Available Channels: {", ".join(channels)}
+Home Region: {home_region}
 Current Loop: {state.get("loop_count", 0)}
 Past Performance Report: {json.dumps(report) if report else "No previous data available."}
 
@@ -116,6 +125,14 @@ Generate the optimal budget allocation and strategy.
     except Exception as e:
         logger.error("strategy_ai_failed", error=str(e))
         strategy_data = _get_fallback_plan(channels, total_budget)
+
+    # Make sure `regions` is always populated — older LLM responses or the
+    # fallback plan omit it, but `legal_cross_border` rule depends on it.
+    regions = strategy_data.get("regions") or []
+    regions = [str(r).upper() for r in regions if isinstance(r, str)]
+    if not regions:
+        regions = [home_region]
+    strategy_data["regions"] = regions
 
     # 3. Finalize strategy object
     strategy = {

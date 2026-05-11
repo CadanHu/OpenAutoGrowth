@@ -17,29 +17,77 @@
       -webkit-font-smoothing: antialiased;
     }
     body {
-      display: grid;
-      grid-template-columns: 460px 1fr;
+      position: relative;
       height: 100vh;
+      width: 100vw;
+      overflow: hidden;
       background-image:
         radial-gradient(circle at 20% 10%, rgba(165,140,95,0.035), transparent 50%),
         radial-gradient(circle at 80% 70%, rgba(139,115,85,0.025), transparent 60%);
     }
-    @media (max-width: 900px) {
-      body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; height: auto; }
-      #sidebar { max-height: 60vh; }
+    body.sidebar-collapsed #sidebar {
+      transform: translateX(-100%);
+      opacity: 0;
+      pointer-events: none;
     }
 
     #sidebar {
+      position: absolute;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      width: 460px;
+      max-width: 92vw;
       overflow-y: auto;
       padding: var(--sp-5, 20px);
       border-right: 1px solid var(--border-subtle, #e5dfd2);
-      background: rgba(253, 251, 246, 0.6);
-      backdrop-filter: blur(8px);
+      background: rgba(253, 251, 246, 0.92);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      box-shadow: 4px 0 16px rgba(60,42,20,0.08);
+      z-index: 5;
+      transition: transform 0.22s ease, opacity 0.18s ease;
+    }
+
+    /* ── Collapse toggle handle ─────────────────────────────── */
+    #sidebar-toggle {
+      position: fixed;
+      top: 14px;
+      left: 460px;
+      transform: translateX(-50%);
+      z-index: 10;
+      width: 24px;
+      height: 36px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border-subtle, #e5dfd2);
+      border-radius: 6px;
+      background: var(--bg-L1, #fff);
+      color: var(--text-secondary, #5a4d36);
+      cursor: pointer;
+      font-size: 14px;
+      line-height: 1;
+      box-shadow: 0 1px 3px rgba(60,42,20,0.08);
+      transition: left 0.22s ease, background 0.15s ease, color 0.15s ease;
+      padding: 0;
+    }
+    #sidebar-toggle:hover {
+      background: var(--bg-L2, #faf6ec);
+      color: var(--text-primary);
+    }
+    body.sidebar-collapsed #sidebar-toggle {
+      left: 0;
+      transform: translateX(6px);
     }
     #app-frame {
-      width: 100%; height: 100%;
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
       border: none;
       background: var(--bg-L0, #fdfbf6);
+      z-index: 1;
     }
 
     /* ── Heading & section ─────────────────────────────────── */
@@ -335,6 +383,8 @@
     </section>
   </aside>
 
+  <button id="sidebar-toggle" type="button" aria-label="Toggle sidebar" title="Toggle sidebar (⌘/Ctrl + B)">‹</button>
+
   <iframe id="app-frame" src="/" title="OpenAutoGrowth app"></iframe>
 
   <script>
@@ -424,8 +474,27 @@
         document.getElementById('state-route').textContent = hash;
       } catch {}
     }
+    // ── Inject full-width override into the embedded app ──
+    // Main app constrains #app-outlet to var(--page-max-width) (1360px) and
+    // centers it. Inside the harness we want the whole viewport used, so we
+    // drop those constraints once the iframe loads.
+    function injectFullWidthCSS() {
+      const doc = appDoc();
+      if (!doc || doc.getElementById('harness-fullwidth-style')) return;
+      const s = doc.createElement('style');
+      s.id = 'harness-fullwidth-style';
+      s.textContent = `
+        :root { --page-max-width: 100% !important; }
+        #app-outlet, .nav-inner { max-width: 100% !important; }
+      `;
+      doc.head.appendChild(s);
+    }
+
     setInterval(refresh, 1500);
-    frame.addEventListener('load', () => setTimeout(refresh, 200));
+    frame.addEventListener('load', () => {
+      injectFullWidthCSS();
+      setTimeout(refresh, 200);
+    });
     refresh();
 
     // ── Quick nav ──────────────────────────────────────────
@@ -655,6 +724,27 @@
         ls?.removeItem('locale');
       } catch {}
       frame.src = '/?_=' + Date.now();
+    });
+
+    // ── Sidebar collapse toggle ────────────────────────────
+    const toggleBtn = document.getElementById('sidebar-toggle');
+    const COLLAPSE_KEY = 'oag.harness.sidebarCollapsed';
+    function applyCollapsed(collapsed) {
+      document.body.classList.toggle('sidebar-collapsed', collapsed);
+      toggleBtn.textContent = collapsed ? '›' : '‹';
+      toggleBtn.setAttribute('aria-expanded', String(!collapsed));
+    }
+    applyCollapsed(localStorage.getItem(COLLAPSE_KEY) !== '0');
+    toggleBtn.addEventListener('click', () => {
+      const next = !document.body.classList.contains('sidebar-collapsed');
+      applyCollapsed(next);
+      localStorage.setItem(COLLAPSE_KEY, next ? '1' : '0');
+    });
+    window.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        toggleBtn.click();
+      }
     });
 
     // First paint

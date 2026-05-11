@@ -6,6 +6,7 @@ Output: state.review_result (APPROVED/REJECTED), state.review_feedback
 """
 import json
 import structlog
+from app.core.event_bus import event_bus
 from app.core.llm import llm_client, current_agent_type
 from .state import CampaignState
 
@@ -20,6 +21,11 @@ async def reviewer_node(state: CampaignState) -> dict:
 
     content_bundle = state.get("content")
     if not content_bundle or not content_bundle.get("variants"):
+        await event_bus.publish(
+            "ReviewCompleted",
+            {"status": "REJECTED", "feedback": "No content found to review."},
+            state["campaign_id"],
+        )
         return {"review_result": "REJECTED", "review_feedback": "No content found to review."}
 
     variants = content_bundle["variants"]
@@ -50,6 +56,12 @@ async def reviewer_node(state: CampaignState) -> dict:
 
         logger.info("reviewer_done", status=status, feedback=feedback)
 
+        await event_bus.publish(
+            "ReviewCompleted",
+            {"status": status, "feedback": feedback},
+            state["campaign_id"],
+        )
+
         return {
             "review_result": status,
             "review_feedback": feedback,
@@ -58,4 +70,9 @@ async def reviewer_node(state: CampaignState) -> dict:
 
     except Exception as exc:
         logger.error("reviewer_error", error=str(exc))
+        await event_bus.publish(
+            "ReviewCompleted",
+            {"status": "REJECTED", "feedback": f"Reviewer failed: {str(exc)}"},
+            state["campaign_id"],
+        )
         return {"review_result": "REJECTED", "review_feedback": f"Reviewer failed: {str(exc)}"}

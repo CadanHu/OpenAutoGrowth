@@ -31,6 +31,7 @@ import { OptimizerAgent }        from './src/agents/Optimizer.js';
 // ── API layer ─────────────────────────────────────────────────────
 import { CampaignAPI }           from './src/api/routes.js';
 import { wsBroadcaster }         from './src/api/websocket.js';
+import { auth, ensureLoggedIn }  from './src/ui/auth.js';
 
 // ── i18n ──────────────────────────────────────────────────────────
 import { i18n }                  from './src/i18n/index.js';
@@ -39,6 +40,7 @@ import { i18n }                  from './src/i18n/index.js';
 import './src/ui/components.css';
 import { router }    from './src/ui/router.js';
 import { AppShell }  from './src/ui/shell.js';
+import * as tour    from './src/ui/onboarding.js';
 
 // ══════════════════════════════════════════════════════════════════
 // SYSTEM BOOTSTRAP
@@ -70,6 +72,7 @@ window.OAG = {
   eventBus: globalEventBus,
   wsBroadcaster,
   i18n,
+  auth,
 };
 
 console.log('[System] OpenAutoGrowth initialized — 8 agents online.');
@@ -104,7 +107,9 @@ document.addEventListener('DOMContentLoaded', () => {
     .register('/agents/channel-exec',    () => import('./src/ui/pages/agent-channel-exec.js'))
     .register('/agents/multimodal',      () => import('./src/ui/pages/agent-multimodal.js'))
     .register('/agents/orchestrator',    () => import('./src/ui/pages/agent-orchestrator.js'))
+    .register('/users',                  () => import('./src/ui/pages/users.js'))
     .register('/agents/:id',             () => import('./src/ui/pages/agent-placeholder.js'))
+    .register('/governance',             () => import('./src/ui/pages/governance.js'))
     .setFallback('/');
 
   const shell = new AppShell();
@@ -112,4 +117,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
   router.start();
   i18n.updateUI();
+
+  // Phase 1A: require login before the user can interact with anything
+  // that hits a protected endpoint. The modal blocks the UI; the rest of
+  // the app stays mounted underneath so reload-without-token doesn't
+  // wipe page state. 401s from any later request also auto-open it.
+  if (!auth.isLoggedIn()) {
+    ensureLoggedIn(api);
+  }
+
+  // First-time onboarding tour. Reads `localStorage.oag_tour_state` —
+  // if not 'completed' or 'skipped', prompts the user. Manual replay
+  // available via the Hub's "Replay tour" link → window.OAG.tour.reset().
+  window.OAG = window.OAG || {};
+  window.OAG.tour = tour;
+  tour.maybeAutoStart();
 });

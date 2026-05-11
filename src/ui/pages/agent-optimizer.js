@@ -19,6 +19,7 @@ import {
   getActiveCid,
   subscribeCampaignChange,
   renderCampaignBanner,
+  renderMockBanner,
 } from '../campaign-context.js';
 
 const AGENT_ID    = 'optimizer';
@@ -117,32 +118,123 @@ function renderOptSummary(event) {
   `;
 }
 
-// ── Tab: Rules Inspector (specialization) ──────────────────────────
+// ── Tab: Rules Inspector ───────────────────────────────────────────
+// Fetches the BACKEND rules via /v1/optimizer/rules. Toggles call
+// PATCH /v1/optimizer/rules/{id} which persists to the DB and is picked
+// up by the ARQ optimizer worker on its very next campaign pass.
 function renderRules(panel) {
-  const engine = getRuleEngine();
-  if (!engine) {
-    panel.innerHTML = `<p class="muted">${t('opt_engine_unavailable', 'Rule engine unavailable.')}</p>`;
-    return;
-  }
-  const rules = [...engine.rules].sort((a, b) => a.priority - b.priority);
-  panel.innerHTML = `
-    <div class="rules-grid">
-      ${rules.map(r => renderRuleCard(r, engine)).join('')}
-    </div>
-  `;
+  let mounted = true;
 
-  const handlers = [];
-  panel.querySelectorAll('[data-rule-toggle]').forEach(cb => {
-    const id = cb.dataset.ruleToggle;
-    const onChange = () => {
-      const rule = engine.rules.find(x => x.id === id);
-      if (rule) rule.enabled = cb.checked;
-      renderRules(panel);
-    };
-    cb.addEventListener('change', onChange);
-    handlers.push({ el: cb, onChange });
-  });
-  return () => handlers.forEach(({ el, onChange }) => el.removeEventListener('change', onChange));
+  async function paint() {
+    if (!mounted) return;
+    const api = getCtx().api;
+    if (!api?.listOptimizerRules) {
+      panel.innerHTML = `<p class="muted">${t('opt_engine_unavailable', 'Rule engine unavailable.')}</p>`;
+      return;
+    }
+    panel.innerHTML = `<div class="tab-loading"><span class="dot pulse"></span></div>`;
+    let rules = [];
+    let loadErr = null;
+    try {
+      const resp = await api.listOptimizerRules();
+      if (resp?.success && Array.isArray(resp.data?.rules)) {
+        rules = resp.data.rules;
+      } else {
+        loadErr = resp?.error || 'list failed';
+      }
+    } catch (e) {
+      loadErr = e?.message || String(e);
+    }
+    if (!mounted) return;
+
+    if (loadErr) {
+      panel.innerHTML = `<p class="muted" style="color:var(--danger);">${t('opt_rules_load_failed', 'Failed to load rules')}: ${escapeHtml(loadErr)}</p>`;
+      return;
+    }
+
+    panel.innerHTML = `
+      <p class="muted tiny" style="margin: 0 0 12px;">
+        ${t('opt_rules_source', 'Showing the actual backend rule set. Toggling a rule writes a persistent override; the optimizer worker picks it up on the next campaign pass.')}
+      </p>
+      <div class="rules-grid">
+        ${rules.map(renderBackendRuleCard).join('')}
+      </div>
+    `;
+
+    panel.querySelectorAll('[data-rule-toggle]').forEach(cb => {
+      cb.addEventListener('change', async () => {
+        const id = cb.dataset.ruleToggle;
+        const desired = cb.checked;
+        cb.disabled = true;
+        try {
+          const resp = await api.setOptimizerRuleEnabled(id, desired);
+          if (!resp?.success) throw new Error(resp?.error || 'patch failed');
+        } catch (e) {
+          console.warn('[optimizer] toggle failed', e);
+          cb.checked = !desired;        // revert checkbox on error
+        } finally {
+          cb.disabled = false;
+          paint();                      // refresh to show new overridden state
+        }
+      });
+    });
+    panel.querySelectorAll('[data-rule-revert]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.ruleRevert;
+        btn.disabled = true;
+        try {
+          const resp = await api.clearOptimizerRuleOverride(id);
+          if (!resp?.success && !/204|404/.test(String(resp?.error || ''))) {
+            throw new Error(resp?.error || 'revert failed');
+          }
+        } catch (e) {
+          console.warn('[optimizer] revert failed', e);
+        } finally {
+          paint();
+        }
+      });
+    });
+  }
+
+  paint();
+  return () => { mounted = false; };
+}
+
+function renderBackendRuleCard(rule) {
+  const cd = rule.cooldown_ms || 0;
+  const isOverridden = !!rule.overridden;
+  return `
+    <article class="rule-card ${rule.enabled ? '' : 'disabled'}">
+      <header class="rule-card-head">
+        <span class="rule-id">${escapeHtml(rule.id)}</span>
+        <h4>${escapeHtml(rule.name || rule.id)}</h4>
+        <label class="toggle">
+          <input type="checkbox" data-rule-toggle="${escapeHtml(rule.id)}" ${rule.enabled ? 'checked' : ''}>
+          <span class="toggle-slider"></span>
+        </label>
+      </header>
+      <div class="rule-card-body">
+        <div class="rule-meta">
+          <span>${t('opt_rule_priority', 'Priority')} <b>${rule.priority}</b></span>
+          <span>${t('opt_rule_cooldown', 'Cooldown')} <b>${Math.round(cd / 60000)}m</b></span>
+          ${isOverridden
+            ? `<button class="btn btn-ghost tiny" data-rule-revert="${escapeHtml(rule.id)}"
+                       title="${t('opt_rule_revert_title', 'Reset to default')}">
+                 ${t('opt_rule_overridden', 'Overridden')} · ${t('opt_rule_revert', 'reset')}
+               </button>`
+            : `<span class="muted tiny">${t('opt_rule_default', 'Default')}</span>`}
+        </div>
+        <div class="rule-condition">
+          <span class="rule-section-label">${t('opt_rule_condition', 'Condition')}</span>
+          <code>${escapeHtml(describeCondition(rule.condition))}</code>
+        </div>
+        <div class="rule-action">
+          <span class="rule-section-label">${t('opt_rule_action', 'Action')}</span>
+          <code>${escapeHtml((rule.action?.type || ''))}${rule.action?.params ? ' ' + JSON.stringify(rule.action.params) : ''}</code>
+        </div>
+      </div>
+    </article>
+  `;
 }
 
 function renderRuleCard(rule, engine) {
@@ -195,6 +287,10 @@ function renderConfig(panel) {
   if (!engine) { panel.innerHTML = `<p class="muted">${t('opt_engine_unavailable', 'Rule engine unavailable.')}</p>`; return; }
 
   panel.innerHTML = `
+    ${renderMockBanner({
+      what: t('mock_what_optimizer_config', 'Config is frontend RuleEngine state, unrelated to backend optimizer behaviour.'),
+      i18nT: t,
+    })}
     <div class="config-form">
       <p class="muted">${t('opt_config_note', 'Fine-grained rule tuning lives in Rules Inspector. Global thresholds below are local-only for now.')}</p>
       <div class="form-row">
@@ -261,6 +357,10 @@ function renderRunRow(event) {
 // ── Tab: DSL (replaces Prompt for rule-backed agent) ───────────────
 function renderDsl(panel) {
   panel.innerHTML = `
+    ${renderMockBanner({
+      what: t('mock_what_optimizer_dsl', 'The DSL editor is local display only — submitting does not push to the backend optimizer.'),
+      i18nT: t,
+    })}
     <div class="prompt-editor">
       <p class="muted">${t('opt_dsl_note', 'Optimizer is rule-driven — below is the current rule DSL for reference. Editing is read-only in v0.0.2.')}</p>
       <pre class="code-block">${escapeHtml(`condition: {

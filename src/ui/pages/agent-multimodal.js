@@ -19,6 +19,7 @@ import {
   getActiveCid,
   subscribeCampaignChange,
   renderCampaignBanner,
+  renderMockBanner,
 } from '../campaign-context.js';
 
 const AGENT_ID = 'multimodal';
@@ -47,26 +48,60 @@ function assetEvents() {
 }
 function getAgent() { return getCtx().orchestrator?.agents?.get?.('Multimodal') || null; }
 
-/** Iterate Memory shortTerm and pull every Multimodal output's assets,
- * scoped to the active campaign when one is selected. */
+/** Collect all multimodal assets visible to this page, scoped to the
+ *  currently-active campaign when one is selected.
+ *
+ *  Two sources merged (de-duped by asset.id):
+ *    1. Backend `AssetsGenerated` events that arrived via the WS bridge
+ *       and live in `eventBus.history`. Payload shape:
+ *         { assets: [{ id, type, aspect_ratio, storage_url, ... }] }
+ *    2. The in-browser Multimodal simulator's output cached in
+ *       `memory.shortTerm` (Playground / offline runs only — empty in
+ *       normal production use).
+ *
+ *  Previously this function only read source (2), so real activities that
+ *  ran on the backend showed an empty Library — the page looked broken
+ *  even though the pipeline had successfully generated assets.
+ */
 function collectAssets() {
-  const memory = getCtx().memory;
-  const out = [];
-  if (!memory?.shortTerm) return out;
+  const ctx = getCtx();
   const activeCid = getActiveCid();
-  for (const [key, entry] of memory.shortTerm.entries()) {
-    const v = entry.value;
-    if (v?.agent === 'MULTIMODAL' && Array.isArray(v.assets) && v.assets.length) {
+  const seen = new Map();         // key → asset (de-dupe across sources)
+
+  // 1. Backend events (real assets from LangGraph multimodal node).
+  const events = (ctx.eventBus?.history || [])
+    .filter(e => e.event_type === 'AssetsGenerated' && (!activeCid || e.campaign_id === activeCid));
+  for (const ev of events) {
+    const list = ev.payload?.assets;
+    if (!Array.isArray(list)) continue;
+    const generatedAt = ev.occurred_at || new Date().toISOString();
+    for (const asset of list) {
+      const key = asset.id || `${ev.campaign_id}|${generatedAt}|${asset.storage_url || asset.url || Math.random()}`;
+      if (seen.has(key)) continue;
+      seen.set(key, { ...asset, campaign_id: ev.campaign_id, generated_at: generatedAt });
+    }
+  }
+
+  // 2. In-browser simulator memory (legacy / Playground).
+  const memory = ctx.memory;
+  if (memory?.shortTerm) {
+    for (const [key, entry] of memory.shortTerm.entries()) {
+      const v = entry.value;
+      if (v?.agent !== 'MULTIMODAL' || !Array.isArray(v.assets) || !v.assets.length) continue;
       const cid = key.split(':')[0];
       if (activeCid && cid !== activeCid) continue;
       const generatedAt = v.metadata?.generated_at || new Date(entry.timestamp).toISOString();
       for (const asset of v.assets) {
-        out.push({ ...asset, campaign_id: cid, generated_at: generatedAt });
+        const dedupeKey = asset.id || `${cid}|${generatedAt}|${asset.storage_url || asset.url || Math.random()}`;
+        if (seen.has(dedupeKey)) continue;
+        seen.set(dedupeKey, { ...asset, campaign_id: cid, generated_at: generatedAt });
       }
     }
   }
+
   // Newest first
-  return out.sort((a, b) => (b.generated_at || '').localeCompare(a.generated_at || ''));
+  return Array.from(seen.values())
+    .sort((a, b) => (b.generated_at || '').localeCompare(a.generated_at || ''));
 }
 
 /** SVG placeholder for an asset card. Renders <img> if url is provided. */
@@ -288,6 +323,11 @@ function renderPlayground(panel) {
 
   function paint() {
     panel.innerHTML = `
+      ${renderMockBanner({
+        what: t('mock_what_multimodal_playground', 'Playground calls the in-browser MultimodalAgent and returns mock assets — no backend LLM / image gen is invoked.'),
+        why:  t('mock_what_multimodal_playground_why', 'To see real output, launch a campaign and let the backend pipeline run.'),
+        i18nT: t,
+      })}
       <div class="replan-banner">
         ${icon('sparkles', 'sm')}
         <span>${t('multimodal_play_warning', 'Preview mode · Does not write back to any campaign.')}</span>

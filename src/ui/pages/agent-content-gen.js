@@ -19,6 +19,7 @@ import {
   getActiveCid,
   subscribeCampaignChange,
   renderCampaignBanner,
+  renderMockBanner,
 } from '../campaign-context.js';
 
 const AGENT_ID    = 'content-gen';
@@ -239,6 +240,12 @@ Each variant: hook (<=18 words), body (<={{max_words}} words), cta.`;
 function renderPrompt(panel) {
   const saved = localStorage.getItem('oag.prompt.content-gen') || DEFAULT_PROMPT;
   panel.innerHTML = `
+    ${renderMockBanner({
+      severity: 'warn',
+      what: t('mock_what_contentgen_prompt', 'Prompt is saved to localStorage only; it does NOT replace the prompt used by the backend LLM.'),
+      why:  t('mock_what_contentgen_prompt_why', 'Real custom prompts need a backend prompt-management endpoint.'),
+      i18nT: t,
+    })}
     <div class="prompt-editor">
       <div class="prompt-tools">
         <span class="muted tiny">${t('prompt_variables_hint', 'Variables: {{product.name}}, {{tone}}, {{ab_variants}}, {{channels}}…')}</span>
@@ -307,6 +314,10 @@ function renderLogs(panel) {
 // ── Tab: Playground (specialization) ────────────────────────────────
 function renderPlayground(panel) {
   panel.innerHTML = `
+    ${renderMockBanner({
+      what: t('mock_what_contentgen_playground', 'Playground uses the in-browser ContentGen for mock copy — no backend LLM, and results aren\'t recorded against any campaign.'),
+      i18nT: t,
+    })}
     <form class="playground-form" data-pg-form>
       <div class="form-row">
         <label>${t('pg_product_name', 'Product Name')}</label>

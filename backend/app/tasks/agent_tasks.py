@@ -122,6 +122,11 @@ async def _recover_orphan_campaigns() -> int:
 
 async def startup(ctx: dict):
     """Initialize resources for the worker process."""
+    # Audit listener has to be installed per-process; FastAPI's lifespan
+    # call doesn't cover the ARQ worker. Without this, case.open/task.create
+    # events from the LangGraph pipeline never reach audit_log.
+    from app.core.audit import install as install_audit
+    install_audit()
     await event_bus.connect()
     try:
         recovered = await _recover_orphan_campaigns()
@@ -221,7 +226,7 @@ async def run_campaign_pipeline(ctx: dict, campaign_id: str):
         "strategy":     ("StrategyDecided",      lambda r: {"strategy": r.get("strategy", {})}),
         "content_gen":  ("ContentGenerated",     lambda r: {"bundle": r.get("content", {})}),
         "multimodal":   ("AssetsGenerated",      lambda r: {"assets": r.get("assets", {})}),
-        "reviewer":     ("ContentApproved",      lambda r: {"review_result": r.get("review_result", ""), "feedback": r.get("review_feedback", "")}),
+        "reviewer":     ("ReviewCompleted",      lambda r: {"status": r.get("review_result", ""), "feedback": r.get("review_feedback", "")}),
         "channel_exec": ("AdDeployed",           lambda r: r.get("deployed_ads", {})),
         "analysis":     ("ReportGenerated",      lambda r: r.get("report", {})),
         "optimizer":    ("OptimizationApplied",  lambda r: {"actions": r.get("opt_actions", []), "loop_count": r.get("loop_count", 0)}),
@@ -363,17 +368,11 @@ async def run_campaign_pipeline(ctx: dict, campaign_id: str):
         except Exception as e2:
             logger.warning("campaign_status_fallback_failed", error=str(e2))
 
-    # ── Broadcast to frontend via EventBus ────────────────────────────────
-    # Publish each event so WebSocket-connected clients see real-time updates
-    for task_name in completed_tasks:
-        if task_name in event_map:
-            event_type, payload_fn = event_map[task_name]
-            try:
-                await event_bus.publish(event_type, _jsonb_safe(payload_fn(result)), campaign_id)
-            except Exception as e:
-                logger.warning("event_broadcast_failed", event=event_type, error=str(e))
-
     # Final status broadcast — keep WS clients consistent with the DB row.
+    # Per-agent events are already published in real time from inside each
+    # agent node (e.g. planner.py emits PlanGenerated when it finishes), so
+    # we deliberately do NOT replay them here — replaying caused the canvas
+    # to race through all stages in <1s at end-of-run.
     # (Previously this hard-coded "COMPLETED" whenever LangGraph exited via
     # OPTIMIZING; that lied to clients when KPI wasn't actually met. Now
     # `db_status` already encodes COMPLETED vs MONITORING correctly.)
@@ -469,8 +468,22 @@ async def cancel_job(task_id: str) -> bool:
 
 # ── ARQ Worker Settings ───────────────────────────────────────────────────────
 
+from arq.cron import cron
+from app.tasks.sla_scanner import scan_overdue_tasks
+
+
 class WorkerSettings:
-    functions = [run_campaign_pipeline, run_agent_node]
+    functions = [run_campaign_pipeline, run_agent_node, scan_overdue_tasks]
+    cron_jobs = [
+        # Every 5 minutes: bump overdue approval tasks up the escalation
+        # chain, then auto-decide the ones whose chain is exhausted.
+        # `unique=True` so two workers don't both fire the same tick.
+        cron(
+            scan_overdue_tasks,
+            minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55},
+            unique=True,
+        ),
+    ]
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(settings.arq_redis_url)

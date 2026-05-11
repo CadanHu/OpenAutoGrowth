@@ -20,6 +20,7 @@ from app.schemas.campaign import (
     StartCampaignResponse,
 )
 from app.core.event_bus import event_bus
+from app.core.tenant import resolve_tenant_filter
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()
@@ -190,11 +191,18 @@ async def list_campaigns(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
+    tenant: UUID | None = Depends(resolve_tenant_filter),
 ):
-    """List campaigns with optional status filter and pagination."""
+    """List campaigns with optional status filter and pagination.
+
+    Tenant-scoped: a non-ADMIN only sees their own tenant's campaigns;
+    ADMIN sees everything (or a single tenant via ?tenant_id=).
+    """
     query = select(Campaign)
     if status:
         query = query.where(Campaign.status == status)
+    if tenant is not None:
+        query = query.where(Campaign.org_id == tenant)
 
     total_q = select(func.count()).select_from(query.subquery())
     total = (await db.execute(total_q)).scalar_one()

@@ -1,6 +1,7 @@
 """SQLAlchemy models: organizations, users"""
 import uuid
 from datetime import datetime
+from typing import Optional
 
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, func
 from sqlalchemy.dialects.postgresql import UUID
@@ -32,7 +33,19 @@ class User(Base):
     role: Mapped[str] = mapped_column(
         Enum("ADMIN", "MARKETER", "VIEWER", name="user_role"), nullable=False, default="MARKETER"
     )
+    # tenant scoping. Nullable for forward-compat with existing rows; Phase
+    # 1B will enforce NOT NULL and middleware-driven query filtering.
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # Notification routing (Phase 2). Empty/null = channel disabled.
+    slack_webhook:        Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    dingtalk_webhook:     Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    dingtalk_secret:      Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    # JSONB array of channels to skip even if configured, e.g. ["email"].
+    # Stored as comma-separated string for simplicity here (Phase 2); switch
+    # to JSONB if per-event toggles ever land.
+    notify_channels_disabled: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

@@ -61,6 +61,9 @@ class CampaignState(TypedDict):
     review_result:   Optional[str]           # APPROVED | REJECTED
     review_feedback: Optional[str]           # Feedback if REJECTED
 
+    # ── Human-in-the-loop gate ─────────────────────────────────────
+    gate_status:     Optional[str]           # PASSED | PENDING | REJECTED
+
     # ── Control flow ───────────────────────────────────────────────
     status:        str                       # current campaign status
     loop_count:    int                       # optimization loop counter

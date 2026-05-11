@@ -95,6 +95,20 @@ class Settings(BaseSettings):
     arq_max_jobs: int = Field(default=10, alias="ARQ_MAX_JOBS")
     arq_job_timeout: int = Field(default=300, alias="ARQ_JOB_TIMEOUT")
 
+    # ── SMTP (Phase 2 notifications) ───────────────────────────────
+    # Leave SMTP_HOST empty to disable email entirely — notifications
+    # will be SKIPPED with status="SKIPPED" rather than failing.
+    smtp_host:        str = Field(default="", alias="SMTP_HOST")
+    smtp_port:        int = Field(default=587, alias="SMTP_PORT")
+    smtp_username:    str = Field(default="", alias="SMTP_USERNAME")
+    smtp_password:    str = Field(default="", alias="SMTP_PASSWORD")
+    smtp_from:        str = Field(default="OpenAutoGrowth <noreply@openautogrowth.local>", alias="SMTP_FROM")
+    smtp_use_tls:     bool = Field(default=True, alias="SMTP_USE_TLS")
+    smtp_start_tls:   bool = Field(default=True, alias="SMTP_START_TLS")
+
+    # Public URL used in notification deep-links (e.g. "approve this in the inbox").
+    app_public_url:   str = Field(default="http://localhost:7373", alias="APP_PUBLIC_URL")
+
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"

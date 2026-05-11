@@ -15,6 +15,8 @@ import {
   resolveDefaultCid,
   subscribeCampaignChange,
   statusBadgeClass,
+  prettyCampaignName,
+  shortStatusLabel,
 } from './campaign-context.js';
 
 export class AppShell {
@@ -35,6 +37,7 @@ export class AppShell {
     this._bindLang();
     this._bindPauseAll();
     this._bindCampaignSelector();
+    this._renderUserChip();
     this._highlightCurrent(router.current_path());
 
     document.addEventListener('routeChanged', (e) => {
@@ -51,8 +54,12 @@ export class AppShell {
       this._bindLang();
       this._bindPauseAll();
       this._bindCampaignSelector();
+      this._renderUserChip();
       this._highlightCurrent(router.current_path());
     });
+
+    document.addEventListener('auth:login',  () => this._renderUserChip());
+    document.addEventListener('auth:logout', () => this._renderUserChip());
 
     // Update the chip whenever the global campaign-context changes — covers
     // selections made from any page (FSM sidebar, Memory dropdown, etc.).
@@ -61,6 +68,29 @@ export class AppShell {
     // Auto-pick the most recently-updated campaign on first load if the
     // URL has no cid yet, so every page opens "to" something.
     this._maybeAutoSelect();
+
+    // Poll the governance inbox so the nav-bar Approvals link wears an
+    // accurate pending-count badge — campaigns sitting at
+    // PAUSED_FOR_APPROVAL aren't actionable without going through here.
+    this._refreshGovernanceCount();
+    this._govPollTimer = setInterval(() => this._refreshGovernanceCount(), 15000);
+  }
+
+  async _refreshGovernanceCount() {
+    const api = window.OAG?.api;
+    if (!api?.listGovernanceInbox) return;
+    try {
+      const resp = await api.listGovernanceInbox({ status: 'OPEN' });
+      const count = (resp?.success && Array.isArray(resp.data)) ? resp.data.length : 0;
+      const pill = document.getElementById('nav-governance-count');
+      if (!pill) return;
+      if (count > 0) {
+        pill.textContent = count > 99 ? '99+' : String(count);
+        pill.hidden = false;
+      } else {
+        pill.hidden = true;
+      }
+    } catch { /* silent — auth errors are surfaced elsewhere */ }
   }
 
   _renderNavbar() {
@@ -102,7 +132,13 @@ export class AppShell {
             </div>
           </div>
           <a class="nav-link" href="#/campaigns" data-route="/campaigns">${i18n.t('nav_campaigns') || 'Campaigns'}</a>
+          <a class="nav-link" href="#/governance" data-route="/governance" id="nav-governance">
+            ${i18n.t('nav_governance') || 'Approvals'}
+            <span class="nav-pill" id="nav-governance-count" hidden>0</span>
+          </a>
           <a class="nav-link" href="#/integrations" data-route="/integrations">${i18n.t('nav_integrations') || 'Integrations'}</a>
+          ${(window.OAG?.auth?.getUser?.()?.gov_roles || []).map(r => String(r).toUpperCase()).includes('ADMIN')
+            ? `<a class="nav-link" href="#/users" data-route="/users">${i18n.t('nav_users') || 'Users'}</a>` : ''}
         </nav>
 
         <div class="nav-right">
@@ -133,9 +169,37 @@ export class AppShell {
             <span class="status-dot"></span>
             <span class="status-text">${i18n.t('nav_agents_online')}</span>
           </div>
+          <div class="user-chip" id="user-chip" style="display:flex; align-items:center; gap:8px; padding:4px 10px; border-radius: var(--radius-full); background: var(--bg-L1); font-size: 12px;"></div>
         </div>
       </div>
     `;
+  }
+
+  _renderUserChip() {
+    const chip = document.getElementById('user-chip');
+    if (!chip) return;
+    const user = window.OAG?.auth?.getUser?.();
+    if (!user) { chip.style.display = 'none'; return; }
+    chip.style.display = 'flex';
+    const initials = (user.email || '?')[0]?.toUpperCase() || '?';
+    const roles = (user.gov_roles || []).join(',') || user.role || '';
+    chip.innerHTML = `
+      <span style="width:22px; height:22px; border-radius:50%; background: var(--accent-primary); color:#fff; display:inline-flex; align-items:center; justify-content:center; font-weight:600;">${initials}</span>
+      <span style="line-height:1.1;">
+        <strong style="display:block;">${user.email || ''}</strong>
+        <small class="muted" style="font-size:10px;">${roles}</small>
+      </span>
+      <button id="btn-notify-prefs" class="btn btn-xs" title="Notification settings" style="margin-left:6px;">🔔</button>
+      <button id="btn-logout" class="btn btn-xs" title="Sign out" style="margin-left:4px;">⎋</button>
+    `;
+    document.getElementById('btn-logout')?.addEventListener('click', () => {
+      window.OAG?.auth?.clearSession?.();
+      location.reload();
+    });
+    document.getElementById('btn-notify-prefs')?.addEventListener('click', async () => {
+      const mod = await import('./auth.js');
+      mod.openNotifyPrefs(window.OAG.api);
+    });
   }
 
   _renderFooter() {
@@ -424,14 +488,14 @@ export class AppShell {
       return `
         <button class="campaign-menu-item ${active}" data-cid="${id}" type="button">
           <span class="campaign-menu-item-main">
-            <span class="campaign-menu-item-name text-truncate">${escapeHtml(c.name || c.goal || id)}</span>
+            <span class="campaign-menu-item-name text-truncate">${escapeHtml(prettyCampaignName(c, id))}</span>
             <span class="tiny muted" style="display:flex; gap:6px;">
               <code class="code-inline" style="font-size:10px;">${id.slice(0, 8)}</code>
               <span>·</span>
               <span>${escapeHtml(fmtDateTime(stamp))}</span>
             </span>
           </span>
-          <span class="status-badge ${cls}">${escapeHtml(c.status || '—')}</span>
+          <span class="status-badge ${cls}">${escapeHtml(shortStatusLabel(c.status))}</span>
         </button>
       `;
     }).join('');
@@ -468,8 +532,8 @@ export class AppShell {
     }
     const cls = statusBadgeClass(entry.status);
     dot.className = `status-indicator ${cls === 'active' ? 'ok' : (cls === 'success' ? 'ok' : (cls === 'warning' ? 'warning' : ''))}`;
-    const short = entry.name || entry.goal || cid;
-    text.innerHTML = `<span class="text-truncate">${escapeHtml(truncate(short, 28))}</span> <span class="status-badge ${cls}" style="margin-left:6px;">${escapeHtml(entry.status || '—')}</span>`;
+    const short = prettyCampaignName(entry, cid);
+    text.innerHTML = `<span class="text-truncate">${escapeHtml(truncate(short, 28))}</span> <span class="status-badge ${cls}" style="margin-left:6px;">${escapeHtml(shortStatusLabel(entry.status))}</span>`;
   }
 
   async _maybeAutoSelect() {

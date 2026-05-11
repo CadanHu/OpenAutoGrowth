@@ -9,6 +9,8 @@ import {
   resolveDefaultCid,
   subscribeCampaignChange,
   statusBadgeClass as sharedStatusBadgeClass,
+  prettyCampaignName,
+  shortStatusLabel,
 } from '../campaign-context.js';
 
 const AGENT_ID = 'orchestrator';
@@ -37,7 +39,7 @@ function escapeHtml(str = '') {
 }
 
 const CAMPAIGN_STATES = [
-  'DRAFT', 'PLANNING', 'PENDING_REVIEW', 'PRODUCTION', 'DEPLOYED', 'MONITORING', 'OPTIMIZING', 'PAUSED', 'COMPLETED'
+  'DRAFT', 'PLANNING', 'PAUSED_FOR_APPROVAL', 'PENDING_REVIEW', 'PRODUCTION', 'DEPLOYED', 'MONITORING', 'OPTIMIZING', 'PAUSED', 'COMPLETED'
 ];
 
 // Status → semantic class for the small badges in the sidebar / lists.
@@ -60,6 +62,7 @@ const PIPELINE_BUCKETS = [
   { key: 'deployed',   labelKey: 'orch_bucket_deployed',   label: 'Deployed',   tone: 'active',  match: s => s === 'DEPLOYED' },
   { key: 'monitoring', labelKey: 'orch_bucket_monitoring', label: 'Monitoring', tone: 'active',  match: s => s === 'MONITORING' },
   { key: 'optimizing', labelKey: 'orch_bucket_optimizing', label: 'Optimizing', tone: 'active',  match: s => s === 'OPTIMIZING' || (s && s.startsWith('LOOP_')) },
+  { key: 'awaiting_approval', labelKey: 'orch_bucket_awaiting_approval', label: 'Awaiting approval', tone: 'warning', match: s => s === 'PAUSED_FOR_APPROVAL' },
   { key: 'paused',     labelKey: 'orch_bucket_paused',     label: 'Paused',     tone: 'warning', match: s => s === 'PAUSED' },
   { key: 'completed',  labelKey: 'orch_bucket_completed',  label: 'Completed',  tone: 'success', match: s => s === 'COMPLETED' },
   { key: 'failed',     labelKey: 'orch_bucket_failed',     label: 'Failed',     tone: 'danger',  match: s => s === 'FAILED' || (s && s.endsWith('_FAILED')) },
@@ -141,7 +144,7 @@ async function ensureCampaigns(force = false) {
         map.set(id, {
           ...existing,
           campaign_id: id,
-          name: c.name || c.goal || id,
+          name: prettyCampaignName(c, id),
           status: c.status || 'DRAFT',
           loop_count: c.loop_count ?? existing.loop_count ?? 0,
           active_tasks: c.active_tasks || existing.active_tasks || [],
@@ -372,17 +375,20 @@ function renderFsm(panel) {
           ${campaigns.map(c => {
             const stamp = c.updated_at || c.created_at;
             const badgeCls = statusBadgeClass(c.status);
+            const fullName = prettyCampaignName(c, c.campaign_id);
+            const stampFull = fmtDateTime(stamp);
+            const tip = `${fullName}\nID: ${c.campaign_id}\n${stampFull}\n${c.status || ''}`;
             return `
-            <div class="fsm-sidebar-item ${c.campaign_id === activeCid ? 'active' : ''}" data-cid="${escapeHtml(c.campaign_id)}" title="${escapeHtml(c.campaign_id)}">
+            <div class="fsm-sidebar-item ${c.campaign_id === activeCid ? 'active' : ''}" data-cid="${escapeHtml(c.campaign_id)}" title="${escapeHtml(tip)}">
               <div class="fsm-sidebar-item-main">
-                <div class="text-truncate" style="font-size: 12px; font-weight: var(--fw-medium);">${escapeHtml(c.name || c.campaign_id)}</div>
-                <div class="tiny muted" style="display: flex; gap: 6px; margin-top: 2px;">
-                  <code class="code-inline" style="font-size: 10px;">${shortId(c.campaign_id)}</code>
+                <div class="text-truncate" style="font-size: 12px; font-weight: var(--fw-medium);" title="${escapeHtml(fullName)}">${escapeHtml(fullName)}</div>
+                <div class="tiny muted fsm-sidebar-item-meta">
+                  <code class="code-inline" style="font-size: 10px;" title="${escapeHtml(c.campaign_id)}">${shortId(c.campaign_id)}</code>
                   <span>·</span>
-                  <span>${escapeHtml(fmtDateTime(stamp))}</span>
+                  <span class="text-truncate" title="${escapeHtml(stampFull)}">${escapeHtml(stampFull)}</span>
                 </div>
               </div>
-              <span class="status-badge ${badgeCls}">${escapeHtml(c.status || '—')}</span>
+              <span class="status-badge ${badgeCls}" title="${escapeHtml(c.status || '')}">${escapeHtml(shortStatusLabel(c.status))}</span>
             </div>
           `;}).join('')}
         </div>
@@ -877,6 +883,10 @@ function renderAlerts(panel) {
 
     const pendingCampaigns = campaigns.filter(c => c.status === 'PENDING_REVIEW');
 
+    // Governance approvals now live at /governance (dedicated top-nav entry).
+    // The Approvals card that used to render here has been removed —
+    // duplicating that surface led to two inboxes that could drift apart.
+
     // Use the shared selected campaign. If none in URL, fall back to the
     // most recent in-progress campaign — matches the prior behavior here.
     let activeCid = getActiveCid();
@@ -991,7 +1001,7 @@ function renderAlerts(panel) {
                   ? `<option value="">${t('orch_interv_empty', 'No campaigns available')}</option>`
                   : campaigns.map(c => `
                       <option value="${escapeHtml(c.campaign_id)}" ${c.campaign_id === activeCid ? 'selected' : ''}>
-                        ${escapeHtml((c.campaign_id || '').slice(0,8))} · ${escapeHtml(c.status || '—')} · ${escapeHtml((c.name || c.goal || '').slice(0,28))}
+                        ${escapeHtml((c.campaign_id || '').slice(0,8))} · ${escapeHtml(c.status || '—')} · ${escapeHtml(prettyCampaignName(c, '').slice(0,28))}
                       </option>
                     `).join('')}
               </select>
@@ -1062,6 +1072,10 @@ function renderAlerts(panel) {
         setFb(`${label} ${t('orch_action_fail', 'failed')}: ${e.message || e}`, 'error');
       }
     };
+
+    // (Governance approve/reject handlers removed — the Approvals UI now
+    // lives at /governance. Keep links from here pointing there if anything
+    // ever needs to deep-link in.)
 
     panel.querySelector('#orch-act-pause')?.addEventListener('click', () =>
       runAction(t('orch_btn_pause', 'Pause'),
@@ -1134,7 +1148,8 @@ function renderAlerts(panel) {
   const ctx = getCtx();
   let unsubs = [];
   if (ctx.eventBus) {
-    unsubs = ['StatusChanged', 'AnomalyDetected'].map(ev => ctx.eventBus.subscribe(ev, paint));
+    unsubs = ['StatusChanged', 'AnomalyDetected', 'ApprovalRequired', 'ApprovalResolved']
+      .map(ev => ctx.eventBus.subscribe(ev, paint));
   }
   // Backend-driven anomalies might arrive before any WS subscription is
   // open for that campaign — poll every 8s as a fallback.
@@ -1145,6 +1160,117 @@ function renderAlerts(panel) {
     unsubs.forEach(u => { try { u(); } catch {} });
     clearInterval(timer);
   };
+}
+
+// ── Tab: Audit Log ────────────────────────────────────────────────
+function renderAudit(panel) {
+  let mounted = true;
+  const filters = { actor: '', action: '', entity: '', from: '', to: '' };
+  let limit = 50, offset = 0, total = 0;
+
+  async function paint() {
+    if (!mounted) return;
+    const api = getCtx().api;
+    const resp = await api.listAudit({ ...filters, limit, offset });
+    const data = resp?.success ? resp.data : { total: 0, items: [] };
+    total = data.total || 0;
+    const rows = data.items || [];
+
+    panel.innerHTML = `
+      <div class="panel-card">
+        <header class="panel-card-head">
+          <h3 style="display:flex; align-items:center; gap:6px;">
+            ${icon('shield', 'sm')} ${t('orch_audit_title', 'Audit Log')}
+            <span class="tiny muted" style="font-weight:400; margin-left:4px;">(${total})</span>
+          </h3>
+        </header>
+        <div class="panel-card-body">
+          <div style="display:grid; grid-template-columns: repeat(5, 1fr) auto; gap:8px; margin-bottom:12px;">
+            <input class="modal-input" id="aud-actor"  placeholder="${t('orch_audit_actor', 'actor email contains…')}" value="${escapeHtml(filters.actor)}" />
+            <input class="modal-input" id="aud-action" placeholder="${t('orch_audit_action', 'action (e.g. task.update)')}" value="${escapeHtml(filters.action)}" />
+            <input class="modal-input" id="aud-entity" placeholder="${t('orch_audit_entity', 'entity_type (e.g. revision_tasks)')}" value="${escapeHtml(filters.entity)}" />
+            <input class="modal-input" id="aud-from"   type="datetime-local" value="${escapeHtml(filters.from)}" />
+            <input class="modal-input" id="aud-to"     type="datetime-local" value="${escapeHtml(filters.to)}" />
+            <button class="btn btn-primary" id="aud-apply">${t('orch_audit_apply', 'Apply')}</button>
+          </div>
+
+          ${rows.length === 0 ? `
+            <p class="muted">${t('orch_audit_empty', 'No audit records match the current filters.')}</p>
+          ` : `
+            <table class="attr-table">
+              <thead>
+                <tr>
+                  <th>${t('orch_audit_when', 'When')}</th>
+                  <th>${t('orch_audit_who', 'Actor')}</th>
+                  <th>${t('orch_audit_action_col', 'Action')}</th>
+                  <th>${t('orch_audit_entity_col', 'Entity')}</th>
+                  <th>${t('orch_audit_diff', 'Change')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rows.map(r => {
+                  const change = _diffSummary(r.before, r.after);
+                  return `
+                    <tr>
+                      <td class="tiny muted" title="${escapeHtml(r.ts)}">${escapeHtml(new Date(r.ts).toLocaleString())}</td>
+                      <td>${escapeHtml(r.actor_email || '(system)')}</td>
+                      <td><code class="code-inline">${escapeHtml(r.action)}</code></td>
+                      <td class="tiny">${escapeHtml(r.entity_type)}<br><span class="muted tiny">${escapeHtml(String(r.entity_id || '').slice(0,8))}</span></td>
+                      <td class="tiny">${change}</td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+
+            <div style="display:flex; gap:8px; align-items:center; margin-top:12px;">
+              <button class="btn btn-xs" id="aud-prev" ${offset === 0 ? 'disabled' : ''}>← Prev</button>
+              <span class="tiny muted">${offset + 1}–${Math.min(offset + rows.length, total)} / ${total}</span>
+              <button class="btn btn-xs" id="aud-next" ${offset + rows.length >= total ? 'disabled' : ''}>Next →</button>
+            </div>
+          `}
+        </div>
+      </div>
+    `;
+
+    panel.querySelector('#aud-apply')?.addEventListener('click', () => {
+      filters.actor  = panel.querySelector('#aud-actor').value.trim();
+      filters.action = panel.querySelector('#aud-action').value.trim();
+      filters.entity = panel.querySelector('#aud-entity').value.trim();
+      filters.from   = panel.querySelector('#aud-from').value;
+      filters.to     = panel.querySelector('#aud-to').value;
+      offset = 0;
+      paint();
+    });
+    panel.querySelector('#aud-prev')?.addEventListener('click', () => { offset = Math.max(0, offset - limit); paint(); });
+    panel.querySelector('#aud-next')?.addEventListener('click', () => { offset += limit; paint(); });
+  }
+
+  paint();
+
+  return () => { mounted = false; };
+}
+
+function _diffSummary(before, after) {
+  if (!before && !after) return '<span class="muted tiny">—</span>';
+  if (!before) {
+    // Insert: show key=value summary (cap length).
+    const pairs = Object.entries(after || {}).slice(0, 3)
+      .map(([k, v]) => `${k}=${String(v ?? '').slice(0,20)}`).join(', ');
+    return `<span style="color: var(--success);">created</span> ${escapeHtml(pairs)}`;
+  }
+  if (!after) {
+    return `<span style="color: var(--danger);">deleted</span>`;
+  }
+  const changed = [];
+  for (const k of Object.keys(after)) {
+    if (JSON.stringify(before[k]) !== JSON.stringify(after[k])) {
+      const b = String(before[k] ?? '').slice(0, 30);
+      const a = String(after[k]  ?? '').slice(0, 30);
+      changed.push(`${k}: <span class="muted">${escapeHtml(b)}</span> → <strong>${escapeHtml(a)}</strong>`);
+    }
+  }
+  return changed.length ? changed.join('<br>') : '<span class="muted tiny">no field changes</span>';
 }
 
 // ── Tab: Logs ─────────────────────────────────────────────────────
@@ -1225,6 +1351,7 @@ export default {
         { id: 'fsm',      labelKey: 'orch_tab_fsm',        label: 'FSM View',     icon: 'git-merge',    render: renderFsm },
         { id: 'memory',   labelKey: 'orch_tab_memory',     label: 'Learnings',    icon: 'database',     render: renderMemory },
         { id: 'alerts',   labelKey: 'orch_tab_alerts',     label: 'Alerts & HITL',icon: 'alert-triangle',render: renderAlerts },
+        { id: 'audit',    labelKey: 'orch_tab_audit',      label: 'Audit Log',    icon: 'shield',       render: renderAudit },
         { id: 'logs',     labelKey: 'agent_tab_logs',      label: 'Logs',         icon: 'align-left',   render: renderLogs },
       ],
     });

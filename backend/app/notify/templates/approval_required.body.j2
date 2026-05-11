@@ -1,0 +1,18 @@
+A campaign is paused waiting for your approval.
+
+Role required:    {{ role }}
+Stage:            {{ stage }}
+Campaign ID:      {{ campaign_id }}
+Triggered rules:  {{ rules | join(', ') }}
+
+{% if budget_total -%}
+Total budget:     {{ budget_total }}
+{% endif -%}
+{% if kpi_metric -%}
+KPI target:       {{ kpi_metric }} ≥ {{ kpi_target }}
+{% endif -%}
+
+Open the approval inbox to review and decide:
+  {{ public_url }}/#/agents/orchestrator?tab=alerts
+
+— OpenAutoGrowth

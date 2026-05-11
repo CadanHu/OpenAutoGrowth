@@ -66,7 +66,21 @@ async def optimizer_node(state: CampaignState) -> dict:
         "anomalies": anomalies,
         "loop_count": loop_count,
     }
-    rule_actions = rule_engine.evaluate(rule_context, campaign_id)
+    # Load per-rule overrides written by the UI (PATCH /v1/optimizer/rules/{id}).
+    # Single small query — fine on the hot path. Failure is non-fatal: a DB
+    # blip should fall back to baseline rule defaults, not crash optimization.
+    overrides: dict[str, bool] = {}
+    try:
+        from sqlalchemy import select
+        from app.database import async_session_factory
+        from app.models.optimization import OptimizerRuleOverride
+        async with async_session_factory() as db:
+            rows = (await db.execute(select(OptimizerRuleOverride))).scalars().all()
+            overrides = {r.rule_id: r.enabled for r in rows}
+    except Exception as e:
+        logger.warning("optimizer_overrides_load_failed", error=str(e))
+
+    rule_actions = rule_engine.evaluate(rule_context, campaign_id, overrides=overrides)
 
     # 2. Call AI for Deep Analysis (Strategic Brain)
     ai_actions = []
